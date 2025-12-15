@@ -20,5 +20,5 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
         message: "Check successful"
-    }, { status: 201 });
+    }, { status: 200 });
 }

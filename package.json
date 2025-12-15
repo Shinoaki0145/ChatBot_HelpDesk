@@ -12,6 +12,7 @@
   "dependencies": {
     "bcrypt-ts": "^8.0.0",
     "firebase": "^12.6.0",
+    "jose": "^6.1.3",
     "next": "^16.0.8",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",

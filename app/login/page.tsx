@@ -5,18 +5,40 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { UserRound, Zap } from "lucide-react";
+import { toast } from "@/lib/hooks/use-toast";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (email && password) {
-      // Mock login - in real app, call API
-      localStorage.setItem("userEmail", email);
-      router.push("/account");
+      try {
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            email,
+            password
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          router.push("/account");
+        }
+        else {
+          setLoginError(data.message);
+        }
+      } catch (error) {
+        toast({
+          title: "Login Failed",
+          description: "An unknown error occurred",
+        });
+      }
     }
   };
 
@@ -63,6 +85,11 @@ export default function Login() {
                 className="w-full px-4 py-3 rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 required
               />
+              {loginError && (
+                    <p className="mt-1 text-sm text-red-600 font-medium">
+                      {loginError}
+                    </p>
+              )}
             </div>
 
             <div className="flex justify-end">
