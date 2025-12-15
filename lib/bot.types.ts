@@ -1,11 +1,17 @@
-export type BotConfig = {
-  id: string;
-  name: string;
-  model: string;
+export type AdjustBotResponse = {
+  question: string; // LUÔN ""
+  answer: string;   // instruction
+};
 
-  knowledgeText?: string;
-  knowledgeUrl?: string;
+export type BotDocument = {
+  botID: string;
+  typeModel: string;
+  botName: string;
 
-  systemInstruction?: string; // Adjust Bot Response
+  websiteLink?: string;
+  uploadFile?: string;
+
+  adjustBotResponses: AdjustBotResponse[];
+
   createdAt: number;
 };

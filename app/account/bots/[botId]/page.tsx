@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, Upload, Link as LinkIcon, Send, Share2, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-
 interface Group {
   id: string;
   name: string;
