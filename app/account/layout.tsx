@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Zap, Menu, X, LogOut, LayoutGrid, Users, Headphones, MessageSquare, Code2, CreditCard } from "lucide-react";
 import { useAuth, AuthProvider } from "./AuthContext";
+import { toast } from "@/lib/hooks/use-toast";
 
 const sidebarItems = [
   { icon: LayoutGrid, label: "Create Bot", path: "/account/bots", id: "bots" },
@@ -33,8 +34,26 @@ function AccountContent({ children }: { children: React.ReactNode })  {
     }
   }, [isLoading, isAuth, router]);
 
-  const handleLogout = () => {
-    
+  const handleLogout = async function() {
+    try {
+      const response = await fetch("/api/logout",{
+        method: "DELETE",
+      })
+      if (response.ok) {
+        router.push("/");
+      }
+      else {
+        toast({
+          title: "Logout Error",
+          description: "Unknow error during logout",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Logout Error",
+        description: "Unknow error during logout",
+      });
+    }
   };
   
   if (isLoading) {
