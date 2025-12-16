@@ -4,6 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Plus, Users, Edit2, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 interface Group {
   id: string;
   name: string;
@@ -22,6 +32,8 @@ export default function Groups() {
   const [newGroupName, setNewGroupName] = useState("");
   const [memberEmails, setMemberEmails] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const user = useAuth();
 
   const formatDate = (value: any) => {
@@ -42,8 +54,7 @@ export default function Groups() {
       setLoading(true);
       setError(null);
       try {
-        const emailParam = user.email ? `&email=${encodeURIComponent(user.email)}` : "";
-        const res = await fetch(`/api/group?userId=${user.userId}${emailParam}`);
+        const res = await fetch(`/api/group`);
         if (!res.ok) {
           throw new Error("Unable to load groups");
         }
@@ -108,7 +119,7 @@ export default function Groups() {
             Member_Emails: members.join(","),
           };
 
-      const res = await fetch("/api/group", {
+      const res = await fetch(`/api/group/${isEditing ? "update_members" : "create"}`, {
         method: isEditing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -158,6 +169,32 @@ export default function Groups() {
     setEditingId(null);
     setNewGroupName("");
     setMemberEmails("");
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!user.userId) {
+      setError("You must be signed in to manage groups.");
+      return;
+    }
+    setDeletingId(groupId);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await fetch(`/api/group/delete?groupID=${groupId}`, {
+        method: "DELETE",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.message || "Failed to delete group");
+      }
+      setSuccess(body?.message || "Group deleted.");
+      setOwnedGroups((prev) => prev.filter((g) => g.id !== groupId));
+    } catch (err: any) {
+      setError(err?.message || "Failed to delete group.");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -272,6 +309,8 @@ export default function Groups() {
                         key={group.id}
                         group={group}
                         onEdit={() => handleEditGroup(group)}
+                        onDelete={() => setConfirmDeleteId(group.id)}
+                        isDeleting={deletingId === group.id}
                         canEdit
                       />
                     ))}
@@ -304,6 +343,38 @@ export default function Groups() {
               </div>
             </div>
           )}
+
+          {/* Confirm delete modal */}
+          <AlertDialog
+            open={Boolean(confirmDeleteId)}
+            onOpenChange={(open) => {
+              if (!open) setConfirmDeleteId(null);
+            }}
+          >
+            <AlertDialogContent className="max-w-sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete group</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete <strong>{ownedGroups.find((g) => g.id === confirmDeleteId)?.name || "this group"}</strong>? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className=" bg-red-600 text-red-50 hover:bg-red-800"
+                  onClick={() => {
+                    const id = confirmDeleteId;
+                    setConfirmDeleteId(null);
+                    if (id) {
+                      handleDeleteGroup(id);
+                    }
+                  }}
+                >
+                  Delete group
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
   );
@@ -312,10 +383,14 @@ export default function Groups() {
 function GroupCard({
   group,
   onEdit,
+  onDelete,
+  isDeleting,
   canEdit,
 }: {
   group: Group;
   onEdit?: () => void;
+  onDelete?: () => void;
+  isDeleting?: boolean;
   canEdit?: boolean;
 }) {
   return (
@@ -350,7 +425,7 @@ function GroupCard({
       </div>
 
       <p className="text-xs text-slate-500 mb-4">Created {group.createdAt}</p>
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center">
         <button
           onClick={canEdit ? onEdit : undefined}
           disabled={!canEdit}
@@ -364,11 +439,18 @@ function GroupCard({
           Edit
         </button>
         <button
-          disabled
-          className="p-2 text-slate-400 bg-slate-50 rounded-lg"
-          title="Delete not available yet"
+          onClick={onDelete}
+          disabled={!canEdit || isDeleting}
+          className={`p-2 rounded-lg border ${
+            !canEdit
+              ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
+              : isDeleting
+                ? "border-red-300 bg-red-100 text-red-500"
+                : "border-red-300 bg-red-50 text-red-400 hover:bg-red-200 hover:text-red-600 "
+          } transition-colors flex items-center justify-center`}
+          
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className={`w-4 h-4 ${isDeleting ? "animate-spin" : ""}`} />
         </button>
       </div>
     </div>
