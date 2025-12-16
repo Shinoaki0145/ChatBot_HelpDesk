@@ -3,12 +3,15 @@ import {
     collection, 
     getDocs, 
     query, 
-    where
+    where,
+    deleteDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
 
+// DELETE method to delete group owned by user
 export async function DELETE(request: NextRequest) {
+    // Get session to authenticate and secure api 
     const authSession = await getSession(request);
     if (!(authSession.ok)){
         return authSession;
@@ -18,6 +21,7 @@ export async function DELETE(request: NextRequest) {
     const groupID = Number(url.searchParams.get('groupID'));
 
     try{
+        // get group by id
         const groupsRef = collection(db, 'groups');
         const q = query(groupsRef, where('groupID', '==', Number(groupID)));
         const snapshot = await getDocs(q);
@@ -34,6 +38,8 @@ export async function DELETE(request: NextRequest) {
             }, { status: 403 });
         }
 
+        // delete group
+        await deleteDoc(snapshot[0].ref);
         
         return NextResponse.json({ 
             message: 'Update successful!',

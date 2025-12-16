@@ -9,6 +9,7 @@ import {
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
 
+// PUT method to update shared member email
 interface UpdateGroupRequest {
     userID: number;
     groupID: number;
@@ -16,7 +17,7 @@ interface UpdateGroupRequest {
 }
 
 export async function PUT(request: NextRequest) {
-
+    // Get session to authenticate and secure api 
     const authSession = await getSession(request);
     if (!(authSession.ok)){
         return authSession;
@@ -26,6 +27,7 @@ export async function PUT(request: NextRequest) {
     const { groupID, Member_Emails } = body;
 
     try{
+        // get group by id
         const groupsRef = collection(db, 'groups');
         const q = query(groupsRef, where('groupID', '==', Number(groupID)));
         const snapshot = await getDocs(q);
@@ -43,6 +45,7 @@ export async function PUT(request: NextRequest) {
             }, { status: 403 });
         }
 
+        // update group
         const groupDoc = snapshot.docs[0];
         await updateDoc(groupDoc.ref, {
             sharedMembersEmail: Member_Emails.split(',').map(email => email.trim()),

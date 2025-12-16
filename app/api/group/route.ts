@@ -10,6 +10,8 @@ import { GET as getSession } from '@/app/api/session/route'
 
 // Get method to fetch groups for a user
 export async function GET( request: NextRequest ): Promise<NextResponse> {
+
+    // Get session to authenticate and secure api 
     const authSession = await getSession(request);
     if (!(authSession.ok)){
         return authSession;
@@ -28,11 +30,13 @@ export async function GET( request: NextRequest ): Promise<NextResponse> {
             );
         }
 
+        // get the groups owned by user
         const groupsRef = collection(db, 'groups');
         const ownedPromise = userId
             ? getDocs(query(groupsRef, where('ownerID', '==', userId)))
             : Promise.resolve(null);
-
+        
+        // get the groups are shared with user
         const sharedPromise = email
             ? getDocs(query(groupsRef, where('sharedMembersEmail', 'array-contains', email)))
             : Promise.resolve(null);

@@ -9,6 +9,7 @@ import {
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
 
+// POST method to create group
 interface CreateGroupRequest {
     // ownerID: number;
     groupName: string;
@@ -16,7 +17,7 @@ interface CreateGroupRequest {
 }
 
 export async function POST(request: NextRequest) {
-
+    // Get session to authenticate and secure api 
     const authSession = await getSession(request);
     if (!(authSession.ok)){
         return authSession;
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
         }, { status: 400 });
     }
 
+    // get newId for new group
     const cntDocRef = doc(db, "groups", "id_counter");
     try {
         const newId = await runTransaction(db, async (transaction) => {
@@ -51,6 +53,7 @@ export async function POST(request: NextRequest) {
             return newCurrent;
         });
 
+        // add new group to database (firebase)
         await addDoc(collection(db, "groups"), {
             ownerID: ownerID,
             groupID: newId,
