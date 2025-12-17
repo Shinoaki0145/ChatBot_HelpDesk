@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
         const hashedPassword = hashSync(password, 10);
         await addDoc(collection(db, "users"), {
-            userId: newId,
+            userID: newId,
             email: email,
             password: hashedPassword,
             type: packageType
