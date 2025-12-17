@@ -114,12 +114,14 @@ export default function Chat() {
           );
           const sharedGroupsSnapshot = await getDocs(sharedGroupsQuery);
           
-          // Get botIDs from shared groups (assuming groupID maps to botID)
+          // Get botIDs from shared groups using sharedBotID array
           const sharedBotIDs = new Set<number>();
           sharedGroupsSnapshot.forEach((doc) => {
             const data = doc.data();
-            if (data.groupID) {
-              sharedBotIDs.add(data.groupID);
+            if (data.sharedBotID && Array.isArray(data.sharedBotID)) {
+              data.sharedBotID.forEach((botId: number) => {
+                sharedBotIDs.add(botId);
+              });
             }
           });
           
@@ -160,6 +162,11 @@ export default function Chat() {
         for (const botConfigDoc of allBotConfigDocs) {
           const botConfigData = botConfigDoc.data();
           const botID = botConfigData.botID;
+          
+          // Skip if this is a duplicate Customer Support Bot from database
+          if (botConfigData.botName === "Customer Support Bot") {
+            continue;
+          }
           
           // Check if this bot exists in botAgent (has chat structure)
           const botAgentInfo = botAgentMapByBotId.get(botID);
