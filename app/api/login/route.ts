@@ -13,7 +13,6 @@ interface LoginRequest {
 export async function POST(request: Request) {
     const body: LoginRequest = await request.json();
     const { email, password } = body;
-    let isValidUser: boolean = false;
 
     const q = query(collection(db, "users"), where("email", "==", email));
     const querySnapshot = await getDocs(q);
