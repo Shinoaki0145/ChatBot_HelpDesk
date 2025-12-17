@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
     const data = docSnap.data();
     return NextResponse.json({ 
-        userId: data.id,
+        userId: data.userId,
         email: data.email,
         packageType: data.type
     }, { status: 200 });
