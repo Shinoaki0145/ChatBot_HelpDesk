@@ -9,7 +9,16 @@ import {
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
 
-// PUT method to update shared member email
+/*
+PUT method to update member's emails
+- API PUT "api/group/update_members"
+- header:
+    - cookie: 
+        - session
+- body: 
+    - groupName: string;
+    - Member_Emails: string;
+*/
 interface UpdateGroupRequest {
     // userID: number;
     groupID: number;

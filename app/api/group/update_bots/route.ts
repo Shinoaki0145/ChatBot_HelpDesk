@@ -4,12 +4,20 @@ import {
     getDocs, 
     query, 
     where, 
-    updateDoc
+    updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
-
-// PUT method to update shared member email
+/*
+PUT method to update shared bot
+- API PUT "api/group/update_bots"
+- header:
+    - cookie: 
+        - session
+- body: 
+    - groupIDs: number[];
+    - botID: number;
+*/
 interface UpdateGroupRequest {
     // userID: number;
     groupIDs: number[];
@@ -46,13 +54,18 @@ export async function PUT(request: NextRequest) {
             }, { status: 404 });
         }
 
+        if (userID === botAgent.data().ownerID) {
+            return NextResponse.json({ 
+                message: 'You are not the owner of this bot!',
+            }, { status: 403 });
+        }
+
         // update group
         snapshotGroups.forEach(snapshot => {
             if (userID === snapshot.data().ownerID || 
-                email === snapshot.data().sharedMembersEmail ||
-                userID === botAgent.data().ownerID){
-
-                    let sharedBotsID = snapshot.data().sharedBotsID.empty ? [] : snapshot.data().sharedBotsID.empty ;
+                email === snapshot.data().sharedMembersEmail
+            ){
+                    let sharedBotsID: Number[] = snapshot.data().sharedBotsID.empty ? [] : snapshot.data().sharedBotsID ;
 
                     sharedBotsID.push(botID);
 

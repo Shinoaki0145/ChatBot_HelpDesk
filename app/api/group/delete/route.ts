@@ -9,7 +9,15 @@ import {
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
 
-// DELETE method to delete group owned by user
+/*
+DELETE method to delete group
+- API DELETE "api/group/delete"
+- params:
+    - groupID: number
+- header:
+    - cookie: 
+        - session
+*/
 export async function DELETE(request: NextRequest) {
     // Get session to authenticate and secure api 
     const authSession = await getSession(request);
