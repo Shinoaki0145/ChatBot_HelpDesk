@@ -4,50 +4,136 @@ import { Button } from "@/components/ui/button";
 import { Plus, Bot, Edit2, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase/app";
+import { useAuth } from "@/app/account/AuthContext";
 
 interface BotItem {
   id: string;
+  botID: number;
   name: string;
   model: string;
   createdAt: string;
-  status: "active" | "inactive";
+  active: boolean;
 }
 
 export default function Bots() {
+  const { userId, email, isLoading: authLoading } = useAuth();
   const [bots, setBots] = useState<BotItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load bots from localStorage
-    const storedBots = localStorage.getItem("bots");
-    if (storedBots) {
-      setBots(JSON.parse(storedBots));
-    } else {
-      // Default bots
-      const defaultBots: BotItem[] = [
-        {
-          id: "1",
-          name: "Customer Support Bot",
-          model: "GPT-4",
-          createdAt: "2024-01-15",
-          status: "active",
-        },
-        {
-          id: "2",
-          name: "Sales Assistant",
-          model: "Claude 3",
-          createdAt: "2024-01-10",
-          status: "active",
-        },
-      ];
-      setBots(defaultBots);
-      localStorage.setItem("bots", JSON.stringify(defaultBots));
+    if (authLoading) {
+      return;
     }
-  }, []);
+
+    async function loadBots() {
+      try {
+        setLoading(true);
+        const allBotConfigDocs: any[] = [];
+
+        // 1. Get public bots (owner = 0)
+        const publicBotsQuery = query(
+          collection(db, "botConfigAgent"),
+          where("owner", "==", 0)
+        );
+        const publicBotsSnapshot = await getDocs(publicBotsQuery);
+        allBotConfigDocs.push(...publicBotsSnapshot.docs);
+
+        // 2. Get user's own bots (owner = userId)
+        if (userId) {
+          const myBotsQuery = query(
+            collection(db, "botConfigAgent"),
+            where("owner", "==", parseInt(userId))
+          );
+          const myBotsSnapshot = await getDocs(myBotsQuery);
+          allBotConfigDocs.push(...myBotsSnapshot.docs);
+        }
+
+        // 3. Get shared bots via groups (email in sharedMembersEmail)
+        if (email) {
+          const sharedGroupsQuery = query(
+            collection(db, "groups"),
+            where("sharedMembersEmail", "array-contains", email)
+          );
+          const sharedGroupsSnapshot = await getDocs(sharedGroupsQuery);
+
+          const sharedBotIDs = new Set<number>();
+          sharedGroupsSnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data.sharedBotID && Array.isArray(data.sharedBotID)) {
+              data.sharedBotID.forEach((botId: number) => {
+                sharedBotIDs.add(botId);
+              });
+            }
+          });
+
+          if (sharedBotIDs.size > 0) {
+            for (const botID of sharedBotIDs) {
+              const sharedBotQuery = query(
+                collection(db, "botConfigAgent"),
+                where("botID", "==", botID)
+              );
+              const sharedBotSnapshot = await getDocs(sharedBotQuery);
+              sharedBotSnapshot.docs.forEach((doc) => {
+                if (!allBotConfigDocs.some(d => d.id === doc.id)) {
+                  allBotConfigDocs.push(doc);
+                }
+              });
+            }
+          }
+        }
+
+        // Convert to BotItem format
+        const botsList: BotItem[] = allBotConfigDocs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            botID: data.botID,
+            name: data.botName || "Unnamed Bot",
+            model: data.typeModel || "GPT-4",
+            createdAt: data.createdAt ? new Date(data.createdAt).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit"
+            }) : "N/A",
+            active: data.active ?? true,
+          };
+        });
+
+        setBots(botsList);
+      } catch (error) {
+        console.error("Error loading bots:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadBots();
+  }, [userId, email, authLoading]);
+
+  const handleToggleStatus = async (botDocId: string, currentStatus: boolean) => {
+    try {
+      const newStatus = !currentStatus;
+      const botRef = doc(db, "botConfigAgent", botDocId);
+      await updateDoc(botRef, {
+        active: newStatus
+      });
+
+      // Update local state
+      setBots(bots.map(bot => 
+        bot.id === botDocId ? { ...bot, active: newStatus } : bot
+      ));
+    } catch (error) {
+      console.error("Error updating bot status:", error);
+      alert("Failed to update bot status");
+    }
+  };
 
   const handleDeleteBot = (id: string) => {
+    // TODO: Implement Firebase delete
     const updatedBots = bots.filter((bot) => bot.id !== id);
     setBots(updatedBots);
-    localStorage.setItem("bots", JSON.stringify(updatedBots));
   };
 
   return (
@@ -70,7 +156,11 @@ export default function Bots() {
           </div>
 
           {/* Bots Grid */}
-          {bots.length > 0 ? (
+          {loading ? (
+            <div className="text-center py-16">
+              <p className="text-slate-500">Loading bots...</p>
+            </div>
+          ) : bots.length > 0 ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {bots.map((bot) => (
                 <div
@@ -81,15 +171,17 @@ export default function Bots() {
                     <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
                       <Bot className="w-6 h-6 text-blue-600" />
                     </div>
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        bot.status === "active"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-slate-100 text-slate-700"
+                    <button
+                      onClick={() => handleToggleStatus(bot.id, bot.active)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold transition-all hover:opacity-80 ${
+                        bot.active
+                          ? "bg-green-100 text-green-700 hover:bg-green-200"
+                          : "bg-red-100 text-red-700 hover:bg-red-200"
                       }`}
+                      title={`Click to ${bot.active ? 'deactivate' : 'activate'}`}
                     >
-                      {bot.status === "active" ? "Active" : "Inactive"}
-                    </span>
+                      {bot.active ? "Active" : "Inactive"}
+                    </button>
                   </div>
 
                   <h3 className="text-lg font-semibold text-slate-900 mb-1">

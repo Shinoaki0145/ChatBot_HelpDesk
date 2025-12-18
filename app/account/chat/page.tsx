@@ -21,6 +21,8 @@ interface Bot {
   status?: string;
   hasHistory?: boolean;
   active?: boolean;
+  botID?: number;
+  groups?: string[];
 }
 
 // Format timestamp based on whether it's today or not
@@ -60,6 +62,7 @@ export default function Chat() {
   const [allBots, setAllBots] = useState<Bot[]>([]); // Tất cả bot của user (hiển thị trong modal)
   const [showBotModal, setShowBotModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [allGroups, setAllGroups] = useState<Array<{id: string, name: string, sharedBotID: number[]}>>([]);
 
   // Customer Support Bot - always visible and active
   const CUSTOMER_SUPPORT_BOT_ID = "customer-support";
@@ -82,6 +85,15 @@ export default function Chat() {
         setLoading(true);
         
         const allBotConfigDocs: any[] = [];
+        
+        // Load all groups first
+        const groupsSnapshot = await getDocs(collection(db, "groups"));
+        const groupsData = groupsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().groupName || "Unnamed Group",
+          sharedBotID: doc.data().sharedBotID || []
+        }));
+        setAllGroups(groupsData);
         
         // 1. Get public bots (owner = 0) - excluding Customer Support Bot to avoid duplication
         const publicBotsQuery = query(
@@ -171,21 +183,29 @@ export default function Chat() {
           // Check if this bot exists in botAgent (has chat structure)
           const botAgentInfo = botAgentMapByBotId.get(botID);
           
+          // Find groups that contain this bot
+          const botGroups = groupsData
+            .filter(group => group.sharedBotID.includes(botID))
+            .map(group => group.name);
+          
           const botInfo: Bot = {
             id: botAgentInfo?.docId || botConfigDoc.id, // Use botAgent ID if exists, otherwise botConfig ID
             name: botConfigData.botName || "Unnamed Bot",
             model: botConfigData.typeModel || "GPT-4",
             hasHistory: false,
             active: botConfigData.active ?? true, // Default to true if not set
+            botID: botID,
+            groups: botGroups,
           };
           
           // Add to all bots
           allUserBots.push(botInfo);
           
-          // Check if this bot has any chats (only if exists in botAgent)
-          if (botAgentInfo) {
+          // Check if this bot has any chats for current user (only if exists in botAgent)
+          if (botAgentInfo && userId) {
             const chatsQuery = query(
-              collection(db, "botAgent", botAgentInfo.docId, "chats")
+              collection(db, "botAgent", botAgentInfo.docId, "chats"),
+              where("userID", "==", parseInt(userId))
             );
             const chatsSnapshot = await getDocs(chatsQuery);
             
@@ -234,9 +254,15 @@ export default function Chat() {
         return;
       }
 
-      // Load chat history from Firebase
+      // Load chat history from Firebase - only for current user
+      if (!userId) {
+        setMessages([]);
+        return;
+      }
+
       const chatsQuery = query(
         collection(db, "botAgent", botDocId, "chats"),
+        where("userID", "==", parseInt(userId)),
         orderBy("timestamp", "asc")
       );
       const chatsSnapshot = await getDocs(chatsQuery);
@@ -305,14 +331,14 @@ export default function Chat() {
 
   const handleClearChat = async (botId: string) => {
     try {
-      // Delete all chat documents from Firebase
-      if (botId !== CUSTOMER_SUPPORT_BOT_ID) {
-        const { getDocs, deleteDoc, collection: firestoreCollection, query } = await import('firebase/firestore');
+      // Delete only current user's chat documents from Firebase
+      if (botId !== CUSTOMER_SUPPORT_BOT_ID && userId) {
+        const { getDocs, deleteDoc, collection: firestoreCollection, query, where } = await import('firebase/firestore');
         const chatsRef = firestoreCollection(db, "botAgent", botId, "chats");
-        const chatsQuery = query(chatsRef);
+        const chatsQuery = query(chatsRef, where("userID", "==", parseInt(userId)));
         const chatsSnapshot = await getDocs(chatsQuery);
         
-        // Delete all chat documents
+        // Delete only this user's chat documents
         const deletePromises = chatsSnapshot.docs.map(doc => deleteDoc(doc.ref));
         await Promise.all(deletePromises);
       }
@@ -411,6 +437,18 @@ export default function Chat() {
                     <p className="text-xs text-slate-600">
                       {bot.model?.toUpperCase() || "GPT-4"}
                     </p>
+                    {bot.groups && bot.groups.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {bot.groups.map((group, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700"
+                          >
+                            {group}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </button>
                   {bot.id !== CUSTOMER_SUPPORT_BOT_ID && (
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
