@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { Readable } from "stream";
+import { ca } from "zod/v4/locales";
+import { success } from "zod";
+import { FieldPath } from "firebase/firestore";
 
 export const runtime = "nodejs";
 
@@ -18,70 +21,39 @@ export async function POST(req: Request) {
       );
     }
 
-    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY;
-
-    console.log("🔥 ENV EMAIL:", clientEmail);
-    console.log("🔥 ENV KEY EXIST:", !!privateKey);
-
-    if (!clientEmail || !privateKey) {
-      throw new Error("Missing Google Drive credentials");
-    }
-
-    // File -> Buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Buffer -> Stream (🔥 FIX CỐT LÕI)
-    const stream = Readable.from(buffer);
-
     const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: clientEmail,
-        private_key: privateKey.replace(/\\n/g, "\n"),
-      },
-      scopes: ["https://www.googleapis.com/auth/drive"],
+      credentials: JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_KEY, "base64").toString()),
+      scopes: ["https://www.googleapis.com/auth/drive.file"],
     });
 
     const drive = google.drive({ version: "v3", auth });
 
-    const uploadRes = await drive.files.create({
-      requestBody: {
-        name: file.name,
-        mimeType: file.type,
-      },
-      media: {
-        mimeType: file.type,
-        body: stream, // ✅ PHẢI LÀ STREAM
-      },
-    });
+    const fileMetadata = {
+      name: file.name,
+      parents: [process.env.SHARED_DRIVE_ID || ""],
+    };
 
-    const fileId = uploadRes.data.id;
-    if (!fileId) {
-      throw new Error("Failed to upload file to Drive");
+    const media = {
+      mimeType: file.type,
+      body: Readable.fromWeb(file.stream() as any),
     }
 
-    await drive.permissions.create({
-      fileId,
-      requestBody: {
-        role: "reader",
-        type: "anyone",
-      },
+    const response = await drive.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: "id, name, webViewLink",
+      supportsAllDrives: true,
     });
-
-    const fileUrl = `https://drive.google.com/uc?id=${fileId}`;
 
     return NextResponse.json({
-      provider: "google-drive",
-      fileId,
-      url: fileUrl,
-      mimeType: file.type,
-      fileName: file.name,
+      success: true,
+      fileId: response.data.id,
+      link: response.data.webViewLink,
     });
-  } catch (err: any) {
-    console.error("UPLOAD ERROR:", err);
+  }catch (error) {
+    console.error("Error uploading file:", error);
     return NextResponse.json(
-      { error: err.message ?? "Upload failed" },
+      { error: "Failed to upload file" },
       { status: 500 }
     );
   }
