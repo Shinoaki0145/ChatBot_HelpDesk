@@ -25,7 +25,6 @@ interface Bot {
   groups?: string[];
 }
 
-// Format timestamp based on whether it's today or not
 const formatTimestamp = (timestamp: Date): string => {
   const now = new Date();
   const msgDate = new Date(timestamp);
@@ -36,13 +35,13 @@ const formatTimestamp = (timestamp: Date): string => {
     msgDate.getFullYear() === now.getFullYear();
 
   if (isToday) {
-    // Just show time: "10:42 AM"
+    // "10:42 AM"
     return msgDate.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     });
   } else {
-    // Show date and time: "Dec 16, 2025 10:42 AM"
+    // "Dec 16, 2025 10:42 AM" for messages not in today
     return msgDate.toLocaleString("en-US", {
       month: "short",
       day: "numeric",
@@ -58,8 +57,8 @@ export default function Chat() {
   const [selectedBot, setSelectedBot] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [bots, setBots] = useState<Bot[]>([]); // Bots có lịch sử chat (hiển thị trong sidebar)
-  const [allBots, setAllBots] = useState<Bot[]>([]); // Tất cả bot của user (hiển thị trong modal)
+  const [bots, setBots] = useState<Bot[]>([]);
+  const [allBots, setAllBots] = useState<Bot[]>([]);
   const [showBotModal, setShowBotModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [allGroups, setAllGroups] = useState<Array<{id: string, name: string, sharedBotID: number[]}>>([]);
@@ -75,7 +74,6 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    // Wait for auth to finish loading
     if (authLoading) {
       return;
     }
@@ -85,8 +83,7 @@ export default function Chat() {
         setLoading(true);
         
         const allBotConfigDocs: any[] = [];
-        
-        // Load all groups first
+
         const groupsSnapshot = await getDocs(collection(db, "groups"));
         const groupsData = groupsSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -95,7 +92,7 @@ export default function Chat() {
         }));
         setAllGroups(groupsData);
         
-        // 1. Get public bots (owner = 0) - excluding Customer Support Bot to avoid duplication
+        // Get public bots
         const publicBotsQuery = query(
           collection(db, "botConfigAgent"),
           where("owner", "==", 0)
@@ -108,7 +105,7 @@ export default function Chat() {
         });
         allBotConfigDocs.push(...filteredPublicBots);
         
-        // 2. Get user's own bots (owner = userId) - only if userId exists
+        // Get user's own bots
         if (userId) {
           const myBotsQuery = query(
             collection(db, "botConfigAgent"),
@@ -118,7 +115,7 @@ export default function Chat() {
           allBotConfigDocs.push(...myBotsSnapshot.docs);
         }
         
-        // 3. Get shared bots via groups (email in sharedMembersEmail) - only if email exists
+        // Get shared bots via groups
         if (email) {
           const sharedGroupsQuery = query(
             collection(db, "groups"),
@@ -137,7 +134,6 @@ export default function Chat() {
             }
           });
           
-          // Add shared bots that aren't already in the list
           if (sharedBotIDs.size > 0) {
             for (const botID of sharedBotIDs) {
               const sharedBotQuery = query(
@@ -146,7 +142,6 @@ export default function Chat() {
               );
               const sharedBotSnapshot = await getDocs(sharedBotQuery);
               sharedBotSnapshot.docs.forEach((doc) => {
-                // Only add if not already in the list
                 if (!allBotConfigDocs.some(d => d.id === doc.id)) {
                   allBotConfigDocs.push(doc);
                 }
@@ -155,10 +150,7 @@ export default function Chat() {
           }
         }
         
-        // Get ALL documents from botAgent collection (no filter, we'll match by botID)
         const botAgentSnapshot = await getDocs(collection(db, "botAgent"));
-        
-        // Create a map of botAgent data by botID for quick lookup
         const botAgentMapByBotId = new Map();
         botAgentSnapshot.forEach((doc) => {
           const data = doc.data();
@@ -169,39 +161,32 @@ export default function Chat() {
         
         const allUserBots: Bot[] = [CUSTOMER_SUPPORT_BOT];
         const botsWithHistory: Bot[] = [CUSTOMER_SUPPORT_BOT];
-        
-        // Process each bot config
+
         for (const botConfigDoc of allBotConfigDocs) {
           const botConfigData = botConfigDoc.data();
           const botID = botConfigData.botID;
           
-          // Skip if this is a duplicate Customer Support Bot from database
           if (botConfigData.botName === "Customer Support Bot") {
             continue;
           }
-          
-          // Check if this bot exists in botAgent (has chat structure)
+
           const botAgentInfo = botAgentMapByBotId.get(botID);
-          
-          // Find groups that contain this bot
           const botGroups = groupsData
             .filter(group => group.sharedBotID.includes(botID))
             .map(group => group.name);
           
           const botInfo: Bot = {
-            id: botAgentInfo?.docId || botConfigDoc.id, // Use botAgent ID if exists, otherwise botConfig ID
+            id: botAgentInfo?.docId || botConfigDoc.id,
             name: botConfigData.botName || "Unnamed Bot",
             model: botConfigData.typeModel || "GPT-4",
             hasHistory: false,
-            active: botConfigData.active ?? true, // Default to true if not set
+            active: botConfigData.active ?? true,
             botID: botID,
             groups: botGroups,
           };
-          
-          // Add to all bots
+
           allUserBots.push(botInfo);
-          
-          // Check if this bot has any chats for current user (only if exists in botAgent)
+
           if (botAgentInfo && userId) {
             const chatsQuery = query(
               collection(db, "botAgent", botAgentInfo.docId, "chats"),
@@ -218,10 +203,9 @@ export default function Chat() {
           }
         }
         
-        setAllBots(allUserBots); // Tất cả bot (cho modal New Chat)
-        setBots(botsWithHistory); // Chỉ bot có lịch sử (cho sidebar)
-        
-        // Auto-select Customer Support Bot if no bot is selected
+        setAllBots(allUserBots);
+        setBots(botsWithHistory);
+
         if (botsWithHistory.length > 0) {
           setSelectedBot(CUSTOMER_SUPPORT_BOT_ID);
           await loadChatHistory(CUSTOMER_SUPPORT_BOT_ID);
@@ -237,12 +221,9 @@ export default function Chat() {
     loadBotsWithHistory();
   }, [userId, email, authLoading]);
 
-  // Load chat history for a specific bot
   const loadChatHistory = async (botDocId: string) => {
     try {
       if (botDocId === CUSTOMER_SUPPORT_BOT_ID) {
-        // For Customer Support Bot, you might have a different collection
-        // For now, show welcome message
         setMessages([
           {
             id: "welcome",
@@ -254,7 +235,6 @@ export default function Chat() {
         return;
       }
 
-      // Load chat history from Firebase - only for current user
       if (!userId) {
         setMessages([]);
         return;
@@ -271,7 +251,6 @@ export default function Chat() {
       chatsSnapshot.forEach((doc) => {
         const data = doc.data();
         
-        // Add user message
         if (data.message) {
           chatHistory.push({
             id: `${doc.id}-user`,
@@ -280,8 +259,7 @@ export default function Chat() {
             timestamp: data.timestamp?.toDate() || new Date(),
           });
         }
-        
-        // Add bot response
+
         if (data.response) {
           chatHistory.push({
             id: `${doc.id}-bot`,
@@ -308,19 +286,16 @@ export default function Chat() {
 
   const handleSelectBot = async (botId: string) => {
     setSelectedBot(botId);
-    
-    // Check if bot is already in sidebar (bots with history)
+
     const botInSidebar = bots.find(b => b.id === botId);
     
     if (!botInSidebar) {
-      // Bot not in sidebar yet, add it from allBots
       const selectedBotInfo = allBots.find(b => b.id === botId);
       if (selectedBotInfo) {
         setBots([...bots, selectedBotInfo]);
       }
     }
-    
-    // Load chat history for this bot
+
     await loadChatHistory(botId);
     setShowBotModal(false);
   };
@@ -331,14 +306,12 @@ export default function Chat() {
 
   const handleClearChat = async (botId: string) => {
     try {
-      // Delete only current user's chat documents from Firebase
       if (botId !== CUSTOMER_SUPPORT_BOT_ID && userId) {
         const { getDocs, deleteDoc, collection: firestoreCollection, query, where } = await import('firebase/firestore');
         const chatsRef = firestoreCollection(db, "botAgent", botId, "chats");
         const chatsQuery = query(chatsRef, where("userID", "==", parseInt(userId)));
         const chatsSnapshot = await getDocs(chatsQuery);
         
-        // Delete only this user's chat documents
         const deletePromises = chatsSnapshot.docs.map(doc => deleteDoc(doc.ref));
         await Promise.all(deletePromises);
       }
@@ -369,11 +342,10 @@ export default function Chat() {
       setInput("");
 
       try {
-        // Save message to Firebase (only for non-Customer Support bots)
+        // Save message to Firebase
         if (selectedBot !== CUSTOMER_SUPPORT_BOT_ID) {
           const botInfo = bots.find(b => b.id === selectedBot);
           if (botInfo) {
-            // Add new chat document to botAgent/{botId}/chats
             const { addDoc, collection: firestoreCollection, serverTimestamp } = await import('firebase/firestore');
             const chatRef = firestoreCollection(db, "botAgent", selectedBot, "chats");
             
@@ -386,7 +358,6 @@ export default function Chat() {
           }
         }
         
-        // Simulate bot response
         setTimeout(() => {
           setMessages((prev) => [
             ...prev,
@@ -563,6 +534,7 @@ export default function Chat() {
                   Select a Bot
                 </h2>
                 <button
+                  title="Close"
                   onClick={() => setShowBotModal(false)}
                   className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
                 >
