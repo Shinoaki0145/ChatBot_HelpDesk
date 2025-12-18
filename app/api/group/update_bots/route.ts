@@ -38,14 +38,8 @@ export async function PUT(request: NextRequest) {
     try{
         // get groups by id
         const groupsRef = collection(db, 'groups');
-        const groupsQuery = query(groupsRef, where('groupID', 'array-contains-any', groupIDs));
+        const groupsQuery = query(groupsRef, where('groupID', 'in', groupIDs));
         const snapshotGroups = await getDocs(groupsQuery);
-
-        // get bot by id
-        const botsRef = collection(db, 'groups');
-        const botsQuery = query(groupsRef, where('botID', '==', botID));
-        const snapshotBots = await getDocs(botsQuery);
-        const botAgent = snapshotBots.docs[0]; // only get one bot
 
         if (snapshotGroups.empty) {
             return NextResponse.json({ 
@@ -54,7 +48,22 @@ export async function PUT(request: NextRequest) {
             }, { status: 404 });
         }
 
-        if (userID === botAgent.data().ownerID) {
+        // get bot by id
+        const botsRef = collection(db, 'botConfigAgent');
+        const botsQuery = query(botsRef, where('botID', '==', botID));
+        const snapshotBots = await getDocs(botsQuery);
+        
+
+        if (snapshotBots.empty) {
+            return NextResponse.json({ 
+                message: 'Bot not found!',
+                body
+            }, { status: 404 });
+        }
+        
+        const botAgent = snapshotBots.docs[0]; // only get one bot
+
+        if (userID !== botAgent.data().owner) {
             return NextResponse.json({ 
                 message: 'You are not the owner of this bot!',
             }, { status: 403 });
@@ -63,14 +72,16 @@ export async function PUT(request: NextRequest) {
         // update group
         snapshotGroups.forEach(snapshot => {
             if (userID === snapshot.data().ownerID || 
-                email === snapshot.data().sharedMembersEmail
+                snapshot.data().sharedMembersEmail.includes(email)
             ){
-                    let sharedBotsID: Number[] = snapshot.data().sharedBotsID.empty ? [] : snapshot.data().sharedBotsID ;
+                    let sharedBotID: Number[] = snapshot.data().sharedBotID.empty ? [] : snapshot.data().sharedBotID ;
 
-                    sharedBotsID.push(botID);
+                    if (sharedBotID.includes(botID) ) return;
+
+                    sharedBotID.push(botID);
 
                     updateDoc(snapshot.ref, {
-                        sharedBotsID: sharedBotsID,
+                        sharedBotID: sharedBotID,
                     });
             }
         })
