@@ -1,11 +1,12 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Send, Trash2, Plus, X } from "lucide-react";
+import { Send, Trash2, Plus, X, ShieldAlert, CircleAlert } from "lucide-react";
 import { useState, useEffect } from "react";
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/app";
 import { useAuth } from "@/app/account/AuthContext";
+import { Alert } from "@/components/ui/alert";
 
 interface ChatMessage {
   id: string;
@@ -60,6 +61,11 @@ export default function Chat() {
   const [allBots, setAllBots] = useState<Bot[]>([]); // Tất cả bot của user (hiển thị trong modal)
   const [showBotModal, setShowBotModal] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // logic to alert ticket
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [ticketName, setTicketName] = useState("");
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
 
   // Customer Support Bot - always visible and active
   const CUSTOMER_SUPPORT_BOT_ID = "customer-support";
@@ -331,52 +337,89 @@ export default function Chat() {
   };
 
   const handleSendMessage = async () => {
-    if (input.trim() && selectedBot) {
-      const userMessage = input;
-      const newMessage: ChatMessage = {
-        id: String(Date.now()),
-        role: "user",
-        content: userMessage,
-        timestamp: new Date(),
-      };
-      setMessages([...messages, newMessage]);
-      setInput("");
+    if (!input.trim() || !selectedBot) return;
 
-      try {
-        // Save message to Firebase (only for non-Customer Support bots)
-        if (selectedBot !== CUSTOMER_SUPPORT_BOT_ID) {
-          const botInfo = bots.find(b => b.id === selectedBot);
-          if (botInfo) {
-            // Add new chat document to botAgent/{botId}/chats
-            const { addDoc, collection: firestoreCollection, serverTimestamp } = await import('firebase/firestore');
-            const chatRef = firestoreCollection(db, "botAgent", selectedBot, "chats");
-            
-            await addDoc(chatRef, {
-              message: userMessage,
-              response: "Thanks for your message! How else can I assist you?",
-              timestamp: serverTimestamp(),
-              userID: parseInt(userId || "0")
-            });
-          }
-        }
-        
-        // Simulate bot response
-        setTimeout(() => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: String(Date.now() + 1),
-              role: "bot",
-              content: "Thanks for your message! How else can I assist you?",
-              timestamp: new Date(),
-            },
-          ]);
-        }, 500);
-      } catch (error) {
-        console.error("Error saving message:", error);
-      }
+    const userMessage = input;
+    setInput("");
+
+    if (selectedBot !== CUSTOMER_SUPPORT_BOT_ID) {
+      const { addDoc, collection: firestoreCollection, serverTimestamp } =
+        await import("firebase/firestore");
+
+      const chatRef = firestoreCollection(db, "botAgent", selectedBot, "chats");
+
+      const docRef = await addDoc(chatRef, {
+        message: userMessage,
+        response: "Thanks for your message! How else can I assist you?",
+        timestamp: serverTimestamp(),
+        userID: parseInt(userId || "0"),
+      });
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${docRef.id}-user`,
+          role: "user",
+          content: userMessage,
+          timestamp: new Date(),
+        },
+        {
+          id: `${docRef.id}-bot`,
+          role: "bot",
+          content: "Thanks for your message! How else can I assist you?",
+          timestamp: new Date(),
+        },
+      ]);
     }
   };
+
+
+  // Handle reporting issue (creating ticket)
+  const handleReportIssue = async () => {
+    if (!selectedBot || messages.length === 0) return;
+
+    setShowReportModal(true);
+  };
+
+  const handleSubmitTicket = async () => {
+    if (!ticketName.trim()) {
+      alert("Please enter ticket name");
+      return;
+    }
+
+    const lastUserMessage = [...messages].reverse().find(m => m.role === "user");
+    if (!lastUserMessage) return;
+
+    const chatDocId = lastUserMessage.id.split("-")[0];
+
+    try {
+      setIsSubmittingTicket(true);
+
+      await fetch("/api/ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nameTicket: ticketName,
+          question: lastUserMessage.content,
+          fromChatId: chatDocId,
+          userId,
+        }),
+      });
+
+      alert("Ticket reported successfully");
+
+      // reset
+      setTicketName("");
+      setShowReportModal(false);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to submit ticket");
+    } finally {
+      setIsSubmittingTicket(false);
+    }
+  };
+
+
 
   return (
     <div className="p-8 h-[calc(100vh-80px)]">
@@ -505,6 +548,9 @@ export default function Chat() {
                   placeholder="Type your message..."
                   className="flex-1 px-4 py-3 rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
+                <Button onClick={handleReportIssue} className="bg-red-600 hover:bg-red-700">
+                  <CircleAlert className="w-4 h-4" />
+                </Button>
                 <Button
                   onClick={handleSendMessage}
                   className="bg-blue-600 hover:bg-blue-700"
@@ -571,6 +617,47 @@ export default function Chat() {
             </div>
           </div>
         )}
+        {showReportModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <h2 className="text-xl font-bold text-slate-900 mb-4">
+                Report an Issue
+              </h2>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Ticket name
+                  </label>
+                  <input
+                    type="text"
+                    value={ticketName}
+                    onChange={(e) => setTicketName(e.target.value)}
+                    placeholder="e.g. Bot answered incorrectly"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowReportModal(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSubmitTicket}
+                    disabled={isSubmittingTicket}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    {isSubmittingTicket ? "Submitting..." : "Submit Ticket"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
