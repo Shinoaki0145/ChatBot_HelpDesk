@@ -5,9 +5,11 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, Upload, Link as LinkIcon, Send, Share2, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
+import { toast } from "@/lib/hooks/use-toast";
 interface Group {
   id: string;
   name: string;
+  sharedBotID?: number[];
 }
 
 export default function BotView() {
@@ -25,11 +27,50 @@ export default function BotView() {
   const [isSaved, setIsSaved] = useState(false);
   const packageType = localStorage.getItem("packageType") || "individual";
 
-  const [availableGroups] = useState<Group[]>([
-    { id: "1", name: "Sales Team" },
-    { id: "2", name: "Support Team" },
-    { id: "3", name: "Marketing Team" },
-  ]);
+  const [availableGroups, setAvailableGroups] = useState<Group[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState<boolean>(true);
+  const [groupsError, setGroupsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      setGroupsLoading(true);
+      setGroupsError(null);
+      try {
+        const res = await fetch('/api/group');
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.message || 'Failed to fetch groups');
+        }
+        const data = await res.json();
+        const mapGroup = (g: any): Group => ({
+          id: String(g.groupID ?? g.id),
+          name: g.groupName ?? g.name ?? 'Unnamed group',
+          sharedBotID: Array.isArray(g.sharedBotID) ? g.sharedBotID : [],
+        });
+
+        const owned: Group[] = data?.ownedGroups?.map(mapGroup) ?? data?.groups?.map(mapGroup) ?? [];
+        const shared: Group[] = data?.sharedGroups?.map(mapGroup) ?? [];
+
+        const combined = [...owned, ...shared];
+        setAvailableGroups(combined);
+
+        // Pre-select groups that already contain this bot (only if user hasn't selected any yet)
+        if (botId && selectedGroups.length === 0) {
+          const initialSelected = combined
+            .filter((g) => (g.sharedBotID ?? []).includes(Number(botId)))
+            .map((g) => g.id);
+          if (initialSelected.length) setSelectedGroups(initialSelected);
+        }
+      } catch (err: any) {
+        setGroupsError(err?.message || 'Failed to fetch groups');
+        toast({ title: 'Failed to load groups', description: err?.message || 'Check your network' });
+      } finally {
+        setGroupsLoading(false);
+      }
+    };
+
+    fetchGroups();
+  }, []);
 
   useEffect(() => {
     // Load bot data from localStorage
@@ -87,6 +128,45 @@ export default function BotView() {
         ? prev.filter((id) => id !== groupId)
         : [...prev, groupId]
     );
+  };
+
+  const [isSharing, setIsSharing] = useState(false);
+
+  const handleShareBot = async () => {
+    if (!botId) {
+      toast({ title: "Bot ID missing", description: "Unable to share without bot ID" });
+      return;
+    }
+
+    setIsSharing(true);
+
+    try {
+      const body = {
+        groupIDs: selectedGroups.map((id) => Number(id)),
+        botID: Number(botId),
+      };
+
+      const res = await fetch("/api/group/update_bots", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast({ title: "Failed to update groups", description: data?.message || "Server error" });
+        return;
+      }
+
+      toast({ title: "Shared successfully", description: data?.message || "Bot sharing updated" });
+      setShowGroupModal(false);
+    } catch (error) {
+      console.error("Error sharing bot:", error);
+      toast({ title: "Error", description: "Network or server error" });
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   return (
@@ -370,29 +450,36 @@ export default function BotView() {
                   Select Groups
                 </h2>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {availableGroups.map((group) => (
-                    <label
-                      key={group.id}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedGroups.includes(group.id)}
-                        onChange={() => toggleGroupSelection(group.id)}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-slate-900 font-medium">
-                        {group.name}
-                      </span>
-                    </label>
-                  ))}
+                  {groupsLoading ? (
+                    <div className="text-center text-sm text-slate-500">Loading groups...</div>
+                  ) : groupsError ? (
+                    <div className="text-center text-sm text-red-600">{groupsError}</div>
+                  ) : availableGroups.length === 0 ? (
+                    <div className="text-center text-sm text-slate-500">No groups found</div>
+                  ) : (
+                    availableGroups.map((group) => (
+                      <label
+                        key={group.id}
+                        className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedGroups.includes(group.id)}
+                          onChange={() => toggleGroupSelection(group.id)}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-slate-900 font-medium">{group.name}</span>
+                      </label>
+                    ))
+                  )}
                 </div>
                 <div className="flex gap-3 mt-6">
                   <Button
-                    onClick={() => setShowGroupModal(false)}
+                    onClick={handleShareBot}
+                    disabled={isSharing}
                     className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
                   >
-                    Done
+                    {isSharing ? "Sharing..." : "Share"}
                   </Button>
                   <Button
                     onClick={() => {

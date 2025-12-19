@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
+
 /*
 PUT method to update shared bot
 - API PUT "api/group/update_bots"
@@ -35,45 +36,46 @@ export async function PUT(request: NextRequest) {
     const body: UpdateGroupRequest = await request.json();
     const { groupIDs, botID } = body;
 
+    const groupsRef = collection(db, 'groups');
+
     try{
-        // get groups by id
-        const groupsRef = collection(db, 'groups');
-        const groupsQuery = query(groupsRef, where('groupID', 'in', groupIDs));
-        const snapshotGroups = await getDocs(groupsQuery);
+        if (groupIDs.length > 0){
+            // get groups by id
+            const groupsQuery = query(groupsRef, where('groupID', 'in', groupIDs));
+            const snapshotGroups = await getDocs(groupsQuery);
+            if (snapshotGroups.empty) {
+                return NextResponse.json({ 
+                    message: 'Group not found!',
+                    body
+                }, { status: 404 });
+            }
 
-        if (snapshotGroups.empty) {
-            return NextResponse.json({ 
-                message: 'Group not found!',
-                body
-            }, { status: 404 });
-        }
+            // get bot by id
+            const botsRef = collection(db, 'botConfigAgent');
+            const botsQuery = query(botsRef, where('botID', '==', botID));
+            const snapshotBots = await getDocs(botsQuery);
+            
 
-        // get bot by id
-        const botsRef = collection(db, 'botConfigAgent');
-        const botsQuery = query(botsRef, where('botID', '==', botID));
-        const snapshotBots = await getDocs(botsQuery);
-        
+            if (snapshotBots.empty) {
+                return NextResponse.json({ 
+                    message: 'Bot not found!'+`\nbotID: ${botID}`,
+                    body
+                }, { status: 404 });
+            }
+            
+            const botAgent = snapshotBots.docs[0]; // only get one bot
 
-        if (snapshotBots.empty) {
-            return NextResponse.json({ 
-                message: 'Bot not found!',
-                body
-            }, { status: 404 });
-        }
-        
-        const botAgent = snapshotBots.docs[0]; // only get one bot
+            if (userID !== botAgent.data().owner) {
+                return NextResponse.json({ 
+                    message: 'You are not the owner of this bot!',
+                }, { status: 403 });
+            }
 
-        if (userID !== botAgent.data().owner) {
-            return NextResponse.json({ 
-                message: 'You are not the owner of this bot!',
-            }, { status: 403 });
-        }
-
-        // update group
-        snapshotGroups.forEach(snapshot => {
-            if (userID === snapshot.data().ownerID || 
-                snapshot.data().sharedMembersEmail.includes(email)
-            ){
+            // update group
+            snapshotGroups.forEach(snapshot => {
+                if (userID === snapshot.data().ownerID || 
+                    snapshot.data().sharedMembersEmail.includes(email)
+                ){
                     let sharedBotID: Number[] = snapshot.data().sharedBotID.empty ? [] : snapshot.data().sharedBotID ;
 
                     if (sharedBotID.includes(botID) ) return;
@@ -83,7 +85,24 @@ export async function PUT(request: NextRequest) {
                     updateDoc(snapshot.ref, {
                         sharedBotID: sharedBotID,
                     });
-            }
+                }
+            })
+        }
+
+        // stop shared bot with some groups
+        const stopSharedGroupsQuery = query(groupsRef, where('sharedBotID', 'array-contains', botID));
+        const snapshotStopSharedGroups = await getDocs(stopSharedGroupsQuery);
+
+        if (!snapshotStopSharedGroups.empty)
+        snapshotStopSharedGroups.forEach(snapshot => {
+            if (groupIDs.includes(snapshot.data().groupID)) return;
+            let sharedBotID: Number[] = snapshot.data().sharedBotID.empty ? [] : snapshot.data().sharedBotID ;
+            sharedBotID = sharedBotID.filter(botId => botId !== botID);
+
+            updateDoc(snapshot.ref, {
+                sharedBotID: sharedBotID,
+            });
+            
         })
 
         return NextResponse.json({ 
@@ -91,8 +110,9 @@ export async function PUT(request: NextRequest) {
         }, { status: 200 });
 
     } catch (error) {
-        console.log(`Error updating group: ${error}`);
+        console.log(`Error updating share bot with group: ${error}`);
     }
+
     return NextResponse.json({ 
         message: 'Update group failed with error',
     }, { status: 500 });
