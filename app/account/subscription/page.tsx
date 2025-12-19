@@ -2,11 +2,18 @@
 
 import { Button } from "@/components/ui/button";
 import { Check, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "../AuthContext";
+import { toast } from "@/lib/hooks/use-toast";
 
 export default function Subscription() {
-  const packageType = localStorage.getItem("packageType") || "individual";
+  const {
+    userId,
+    packageType,
+  } = useAuth();
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [billingHistory, setBillingHistory] = useState([]);
 
   const plans = [
     {
@@ -41,8 +48,89 @@ export default function Subscription() {
     },
   ];
 
+  useEffect(() => {
+    async function fetchBillingHistory() {
+      try {
+        const response = await fetch(`/api/subscription?userId=${userId}`);
+        if (response.ok) {
+          const data = await response.json();
+          data.billing_history.sort((a: any, b: any) => b.date.seconds - a.date.seconds);
+          setBillingHistory(data.billing_history);
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    }
+
+    fetchBillingHistory();
+  }, []);
+
+  async function handleCancelPlan() {
+    try {
+      const response = await fetch("/api/subscription/change_plan", {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          packageType: "individual"
+        })
+      });
+      if (response.ok) {
+        setShowCancelModal(false);
+        location.reload();
+      }
+      else {
+        toast({
+          title: "Update error",
+          description: "Failed to update subscription plan"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Update error",
+        description: "Failed to update subscription plan"
+      });
+    }
+  }
+
+  async function handleChangePlan() {
+    try {
+      const response = await fetch("/api/subscription/change_plan", {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          packageType: (packageType === "business") ? "individual" : "business"
+        })
+      });
+      if (response.ok) {
+        setShowCancelModal(false);
+        location.reload();
+      }
+      else {
+        toast({
+          title: "Update error",
+          description: "Failed to update subscription plan"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Update error",
+        description: "Failed to update subscription plan"
+      });
+    }
+  }
+
+  function formatTimeStamp(timestamp: number) {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric"
+    }).format(new Date(timestamp));
+  }
+
   return (
-      <>
+    <>
       <div className="p-8">
         <div className="max-w-6xl mx-auto">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">
@@ -88,11 +176,10 @@ export default function Subscription() {
             {plans.map((plan) => (
               <div
                 key={plan.id}
-                className={`rounded-lg border-2 p-8 transition-all ${
-                  plan.current
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-slate-200 hover:border-blue-300"
-                }`}
+                className={`rounded-lg border-2 p-8 transition-all ${plan.current
+                  ? "border-blue-500 bg-blue-50"
+                  : "border-slate-200 hover:border-blue-300"
+                  }`}
               >
                 <div className="mb-6">
                   <h3 className="text-2xl font-bold text-slate-900 mb-2">
@@ -141,9 +228,12 @@ export default function Subscription() {
                     Current Plan
                   </Button>
                 ) : (
-                  <Button className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-                    Upgrade to {plan.name}
-                  </Button>
+                  packageType === "individual" &&
+                  (
+                    <Button onClick={() => setShowUpgradeModal(true)} className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+                      Upgrade to {plan.name}
+                    </Button>
+                  )
                 )}
               </div>
             ))}
@@ -174,46 +264,37 @@ export default function Subscription() {
                 </thead>
                 <tbody>
                   {packageType === "business" && (
-                    <>
-                      <tr className="border-b border-slate-200 hover:bg-slate-50">
-                        <td className="px-6 py-4 text-slate-900">
-                          Feb 22, 2024
-                        </td>
-                        <td className="px-6 py-4 text-slate-900">500,000 VND</td>
-                        <td className="px-6 py-4">
-                          <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
-                            Paid
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <a
-                            href="#"
-                            className="text-blue-600 hover:text-blue-700 text-sm"
-                          >
-                            Download
-                          </a>
-                        </td>
-                      </tr>
-                      <tr className="border-b border-slate-200 hover:bg-slate-50">
-                        <td className="px-6 py-4 text-slate-900">
-                          Jan 22, 2024
-                        </td>
-                        <td className="px-6 py-4 text-slate-900">500,000 VND</td>
-                        <td className="px-6 py-4">
-                          <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
-                            Paid
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <a
-                            href="#"
-                            className="text-blue-600 hover:text-blue-700 text-sm"
-                          >
-                            Download
-                          </a>
-                        </td>
-                      </tr>
-                    </>
+                    billingHistory.length > 0 ?
+                      (
+                        billingHistory.map((bill, idx) => (
+                          <tr key={idx} className="border-b border-slate-200 hover:bg-slate-50">
+                            <td className="px-6 py-4 text-slate-900">
+                              {formatTimeStamp(bill.date.seconds * 1000)}
+                            </td>
+                            <td className="px-6 py-4 text-slate-900">{new Intl.NumberFormat("en-US").format(bill.amount)} VND</td>
+                            <td className="px-6 py-4">
+                              <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold capitalize">
+                                {bill.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <a
+                                href="#"
+                                className="text-blue-600 hover:text-blue-700 text-sm"
+                              >
+                                Download
+                              </a>
+                            </td>
+                          </tr>
+                        ))
+                      ) :
+                      (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-8 text-center text-slate-600">
+                            No bills yet
+                          </td>
+                        </tr>
+                      )
                   )}
                   {packageType === "individual" && (
                     <tr>
@@ -248,6 +329,7 @@ export default function Subscription() {
                 Keep Subscription
               </Button>
               <Button
+                onClick={() => handleCancelPlan()}
                 className="flex-1 bg-red-600 hover:bg-red-700"
               >
                 Cancel Plan
@@ -256,6 +338,33 @@ export default function Subscription() {
           </div>
         </div>
       )}
-      </>
+      {showUpgradeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md">
+            <h2 className="text-2xl font-bold text-slate-900 mb-4">
+              Change Subscription?
+            </h2>
+            <p className="text-slate-600 mb-6">
+              Are you sure you want to change your subscription?
+            </p>
+            <div className="flex gap-3">
+              <Button
+                onClick={() => setShowUpgradeModal(false)}
+                variant="outline"
+                className="flex-1"
+              >
+                Keep Subscription
+              </Button>
+              <Button
+                onClick={() => handleChangePlan()}
+                className="flex-1 bg-blue-700"
+              >
+                Change Plan
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

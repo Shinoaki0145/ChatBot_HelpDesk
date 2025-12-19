@@ -9,7 +9,16 @@ import {
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
 
-// POST method to create group
+/*
+POST method to create group and with other member
+- API POST "api/group/create"
+- header:
+    - cookie: 
+        - session
+- body: 
+    - groupName: string;
+    - Member_Emails: string;
+*/
 interface CreateGroupRequest {
     // ownerID: number;
     groupName: string;

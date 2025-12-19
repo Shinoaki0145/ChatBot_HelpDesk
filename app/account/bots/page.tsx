@@ -193,7 +193,7 @@ export default function Bots() {
                   </p>
 
                   <div className="flex gap-2">
-                    <Link href={`/account/bots/${bot.id}`} className="flex-1">
+                    <Link href={`/account/bots/${bot.botID}`} className="flex-1">
                       <Button
                         variant="outline"
                         className="w-full"

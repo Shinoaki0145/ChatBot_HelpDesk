@@ -1,6 +1,6 @@
 export type AdjustBotResponse = {
-  question: string; // LUÔN ""
-  answer: string;   // instruction
+  question: string; 
+  answer: string;  
 };
 
 export type BotDocument = {

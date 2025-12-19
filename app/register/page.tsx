@@ -94,6 +94,7 @@ export default function Register() {
       return;
     }
 
+    let isError = false;
     try {
       const response = await fetch('/api/register', {
           method: 'POST',
@@ -107,14 +108,34 @@ export default function Register() {
       
       const data = await response.json();
       if (response.ok) {
-          router.push("/login"); 
+        try {
+          const response = await fetch("/api/subscription", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              userId: data.userId,
+              botId: -1,
+              amount: (packageType === "individual") ? 200_000 : 500_000
+            })
+          });
+          if (response.ok) {
+            router.push("/login");
+          }
+          else {
+            isError = true;
+          }
+        } catch (error) {
+          console.log(error)
+          isError = true;
+        }
       } else {
-        toast({
-          title: "Registration Failed",
-          description: "An unknown error occurred",
-        });
+        isError = true;
       }
     } catch (error) {
+      isError = true;
+    }
+
+    if (isError) {
       toast({
           title: "Registration Failed",
           description: "An unknown error occurred",
