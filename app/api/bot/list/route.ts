@@ -136,19 +136,24 @@ export async function GET(req: NextRequest) {
       const botAgentInfo = botAgentMapByBotId.get(botID);
       const isOwner = botConfigData.owner === userIDNumber;
 
+      const isActive = botConfigData.active ?? true;
+
       const botInfo = {
         id: botConfigDoc.id,
         botID: botID,
         name: botConfigData.botName || "Unnamed Bot",
         model: botConfigData.typeModel || "GPT-4",
         hasHistory: false,
-        active: botConfigData.active ?? true,
+        active: isActive,
         createdAt: botConfigData.createdAt || null,
         botAgentId: botAgentInfo?.docId || null,
         isOwned: isOwner,
       };
 
-      allBots.push(botInfo);
+      // Only add active bots to allBots (for chat page)
+      if (isActive) {
+        allBots.push(botInfo);
+      }
 
       if (isOwner) {
         ownedBots.push(botInfo);

@@ -552,8 +552,8 @@ export default function Chat() {
               </div>
 
               <div className="space-y-3">
-                {allBots.filter(bot => bot.active !== false).length > 0 ? (
-                  allBots.filter(bot => bot.active !== false).map((bot) => (
+                {allBots.length > 0 ? (
+                  allBots.map((bot) => (
                     <button
                       key={bot.id}
                       onClick={() => handleSelectBot(bot.id)}
