@@ -176,6 +176,7 @@ export default function BotView() {
           <div className="flex items-center gap-4 mb-8">
             <Link href="/account/bots">
               <button className="p-2 hover:bg-slate-100 rounded-lg">
+                title="Back to Bots"
                 <ArrowLeft className="w-5 h-5" />
               </button>
             </Link>

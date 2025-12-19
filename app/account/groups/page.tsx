@@ -439,6 +439,7 @@ function GroupCard({
           Edit
         </button>
         <button
+          title="Delete Group"
           onClick={onDelete}
           disabled={!canEdit || isDeleting}
           className={`p-2 rounded-lg border ${

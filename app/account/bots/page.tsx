@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Plus, Bot, Edit2, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/app";
 import { useAuth } from "@/app/account/AuthContext";
 
 interface BotItem {
@@ -21,6 +19,7 @@ export default function Bots() {
   const { userId, email, isLoading: authLoading } = useAuth();
   const [bots, setBots] = useState<BotItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) {
@@ -30,80 +29,32 @@ export default function Bots() {
     async function loadBots() {
       try {
         setLoading(true);
-        const allBotConfigDocs: any[] = [];
-
-        // 1. Get public bots (owner = 0)
-        const publicBotsQuery = query(
-          collection(db, "botConfigAgent"),
-          where("owner", "==", 0)
-        );
-        const publicBotsSnapshot = await getDocs(publicBotsQuery);
-        allBotConfigDocs.push(...publicBotsSnapshot.docs);
-
-        // 2. Get user's own bots (owner = userId)
-        if (userId) {
-          const myBotsQuery = query(
-            collection(db, "botConfigAgent"),
-            where("owner", "==", parseInt(userId))
-          );
-          const myBotsSnapshot = await getDocs(myBotsQuery);
-          allBotConfigDocs.push(...myBotsSnapshot.docs);
+        setError(null);
+        const response = await fetch('/api/bot/list');
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch bots');
         }
 
-        // 3. Get shared bots via groups (email in sharedMembersEmail)
-        if (email) {
-          const sharedGroupsQuery = query(
-            collection(db, "groups"),
-            where("sharedMembersEmail", "array-contains", email)
-          );
-          const sharedGroupsSnapshot = await getDocs(sharedGroupsQuery);
+        const data = await response.json();
 
-          const sharedBotIDs = new Set<number>();
-          sharedGroupsSnapshot.forEach((doc) => {
-            const data = doc.data();
-            if (data.sharedBotID && Array.isArray(data.sharedBotID)) {
-              data.sharedBotID.forEach((botId: number) => {
-                sharedBotIDs.add(botId);
-              });
-            }
-          });
-
-          if (sharedBotIDs.size > 0) {
-            for (const botID of sharedBotIDs) {
-              const sharedBotQuery = query(
-                collection(db, "botConfigAgent"),
-                where("botID", "==", botID)
-              );
-              const sharedBotSnapshot = await getDocs(sharedBotQuery);
-              sharedBotSnapshot.docs.forEach((doc) => {
-                if (!allBotConfigDocs.some(d => d.id === doc.id)) {
-                  allBotConfigDocs.push(doc);
-                }
-              });
-            }
-          }
-        }
-
-        // Convert to BotItem format
-        const botsList: BotItem[] = allBotConfigDocs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            botID: data.botID,
-            name: data.botName || "Unnamed Bot",
-            model: data.typeModel || "GPT-4",
-            createdAt: data.createdAt ? new Date(data.createdAt).toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit"
-            }) : "N/A",
-            active: data.active ?? true,
-          };
-        });
+        const botsList: BotItem[] = data.allBots.map((bot: any) => ({
+          id: bot.id,
+          botID: bot.botID,
+          name: bot.name,
+          model: bot.model,
+          createdAt: bot.createdAt ? new Date(bot.createdAt).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+          }) : "N/A",
+          active: bot.active ?? true,
+        }));
 
         setBots(botsList);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error loading bots:", error);
+        setError(error.message || "Failed to load bots");
       } finally {
         setLoading(false);
       }
@@ -115,25 +66,46 @@ export default function Bots() {
   const handleToggleStatus = async (botDocId: string, currentStatus: boolean) => {
     try {
       const newStatus = !currentStatus;
-      const botRef = doc(db, "botConfigAgent", botDocId);
-      await updateDoc(botRef, {
-        active: newStatus
+      
+      const response = await fetch(`/api/bot/${botDocId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ active: newStatus }),
       });
 
-      // Update local state
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update bot status');
+      }
+
       setBots(bots.map(bot => 
         bot.id === botDocId ? { ...bot, active: newStatus } : bot
       ));
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating bot status:", error);
-      alert("Failed to update bot status");
+      alert(error.message || "Failed to update bot status");
     }
   };
 
-  const handleDeleteBot = (id: string) => {
-    // TODO: Implement Firebase delete
-    const updatedBots = bots.filter((bot) => bot.id !== id);
-    setBots(updatedBots);
+  const handleDeleteBot = async (id: string) => {
+    try {
+      // Call API to delete bot
+      const response = await fetch(`/api/bot/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete bot');
+      }
+
+      setBots(bots.filter((bot) => bot.id !== id));
+    } catch (error: any) {
+      console.error("Error deleting bot:", error);
+      alert(error.message || "Failed to delete bot");
+    }
   };
 
   return (
@@ -154,6 +126,13 @@ export default function Bots() {
               </Button>
             </Link>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+          )}
 
           {/* Bots Grid */}
           {loading ? (
@@ -204,6 +183,7 @@ export default function Bots() {
                       </Button>
                     </Link>
                     <button
+                      title="Delete Bot"
                       onClick={() => handleDeleteBot(bot.id)}
                       className="p-2 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
                     >

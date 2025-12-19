@@ -3,8 +3,6 @@
 import { Button } from "@/components/ui/button";
 import { Send, Trash2, Plus, X, ShieldAlert, CircleAlert } from "lucide-react";
 import { useState, useEffect } from "react";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
-import { db } from "@/lib/firebase/app";
 import { useAuth } from "@/app/account/AuthContext";
 import { Alert } from "@/components/ui/alert";
 
@@ -22,8 +20,10 @@ interface Bot {
   status?: string;
   hasHistory?: boolean;
   active?: boolean;
+  botAgentId?: string | null;
 }
 
+// Format timestamp based on whether it's today or not
 const formatTimestamp = (timestamp: Date): string => {
   const now = new Date();
   const msgDate = new Date(timestamp);
@@ -40,7 +40,7 @@ const formatTimestamp = (timestamp: Date): string => {
       minute: "2-digit",
     });
   } else {
-    // "Dec 16, 2025 10:42 AM" for messages not in today
+    // "Dec 16, 2025 10:42 AM"
     return msgDate.toLocaleString("en-US", {
       month: "short",
       day: "numeric",
@@ -56,17 +56,17 @@ export default function Chat() {
   const [selectedBot, setSelectedBot] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [bots, setBots] = useState<Bot[]>([]);
+  const [bots, setBots] = useState<Bot[]>([])
   const [allBots, setAllBots] = useState<Bot[]>([]);
   const [showBotModal, setShowBotModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // logic to alert ticket
   const [showReportModal, setShowReportModal] = useState(false);
   const [ticketName, setTicketName] = useState("");
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
 
-  // Customer Support Bot - always visible and active
   const CUSTOMER_SUPPORT_BOT_ID = "customer-support";
   const CUSTOMER_SUPPORT_BOT: Bot = {
     id: CUSTOMER_SUPPORT_BOT_ID,
@@ -84,137 +84,46 @@ export default function Chat() {
     async function loadBotsWithHistory() {
       try {
         setLoading(true);
+        setError(null);
         
-        const allBotConfigDocs: any[] = [];
+        const response = await fetch('/api/bot/list');
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch bots');
+        }
+        
+        const data = await response.json();
 
-        const groupsSnapshot = await getDocs(collection(db, "groups"));
-        const groupsData = groupsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          name: doc.data().groupName || "Unnamed Group",
-          sharedBotID: doc.data().sharedBotID || []
+        const allUserBots: Bot[] = data.allBots.map((bot: any) => ({
+          id: bot.id,
+          name: bot.name,
+          model: bot.model,
+          hasHistory: bot.hasHistory,
+          active: bot.active,
+          botAgentId: bot.botAgentId || null,
         }));
-        setAllGroups(groupsData);
         
-        // Get public bots
-        const publicBotsQuery = query(
-          collection(db, "botConfigAgent"),
-          where("owner", "==", 0)
-        );
-        const publicBotsSnapshot = await getDocs(publicBotsQuery);
-        // Filter out any bot named "Customer Support Bot" to avoid duplication
-        const filteredPublicBots = publicBotsSnapshot.docs.filter(doc => {
-          const data = doc.data();
-          return data.botName !== "Customer Support Bot";
-        });
-        allBotConfigDocs.push(...filteredPublicBots);
-        
-        // Get user's own bots
-        if (userId) {
-          const myBotsQuery = query(
-            collection(db, "botConfigAgent"),
-            where("owner", "==", parseInt(userId))
-          );
-          const myBotsSnapshot = await getDocs(myBotsQuery);
-          allBotConfigDocs.push(...myBotsSnapshot.docs);
-        }
-        
-        // Get shared bots via groups
-        if (email) {
-          const sharedGroupsQuery = query(
-            collection(db, "groups"),
-            where("sharedMembersEmail", "array-contains", email)
-          );
-          const sharedGroupsSnapshot = await getDocs(sharedGroupsQuery);
-          
-          // Get botIDs from shared groups using sharedBotID array
-          const sharedBotIDs = new Set<number>();
-          sharedGroupsSnapshot.forEach((doc) => {
-            const data = doc.data();
-            if (data.sharedBotID && Array.isArray(data.sharedBotID)) {
-              data.sharedBotID.forEach((botId: number) => {
-                sharedBotIDs.add(botId);
-              });
-            }
-          });
-          
-          if (sharedBotIDs.size > 0) {
-            for (const botID of sharedBotIDs) {
-              const sharedBotQuery = query(
-                collection(db, "botConfigAgent"),
-                where("botID", "==", botID)
-              );
-              const sharedBotSnapshot = await getDocs(sharedBotQuery);
-              sharedBotSnapshot.docs.forEach((doc) => {
-                if (!allBotConfigDocs.some(d => d.id === doc.id)) {
-                  allBotConfigDocs.push(doc);
-                }
-              });
-            }
-          }
-        }
-        
-        const botAgentSnapshot = await getDocs(collection(db, "botAgent"));
-        const botAgentMapByBotId = new Map();
-        botAgentSnapshot.forEach((doc) => {
-          const data = doc.data();
-          if (data.botID) {
-            botAgentMapByBotId.set(data.botID, { docId: doc.id, data });
-          }
-        });
-        
-        const allUserBots: Bot[] = [CUSTOMER_SUPPORT_BOT];
-        const botsWithHistory: Bot[] = [CUSTOMER_SUPPORT_BOT];
-
-        for (const botConfigDoc of allBotConfigDocs) {
-          const botConfigData = botConfigDoc.data();
-          const botID = botConfigData.botID;
-          
-          if (botConfigData.botName === "Customer Support Bot") {
-            continue;
-          }
-
-          const botAgentInfo = botAgentMapByBotId.get(botID);
-          const botGroups = groupsData
-            .filter(group => group.sharedBotID.includes(botID))
-            .map(group => group.name);
-          
-          const botInfo: Bot = {
-            id: botAgentInfo?.docId || botConfigDoc.id,
-            name: botConfigData.botName || "Unnamed Bot",
-            model: botConfigData.typeModel || "GPT-4",
-            hasHistory: false,
-            active: botConfigData.active ?? true,
-            botID: botID,
-            groups: botGroups,
-          };
-
-          allUserBots.push(botInfo);
-
-          if (botAgentInfo && userId) {
-            const chatsQuery = query(
-              collection(db, "botAgent", botAgentInfo.docId, "chats")
-            );
-            const chatsSnapshot = await getDocs(chatsQuery);
-            
-            if (!chatsSnapshot.empty) {
-              botsWithHistory.push({
-                ...botInfo,
-                hasHistory: true,
-              });
-            }
-          }
-        }
+        const botsWithHistory: Bot[] = data.botsWithHistory.map((bot: any) => ({
+          id: bot.id,
+          name: bot.name,
+          model: bot.model,
+          hasHistory: bot.hasHistory,
+          active: bot.active,
+          botAgentId: bot.botAgentId || null,
+        }));
         
         setAllBots(allUserBots);
         setBots(botsWithHistory);
-
+        
+        // Auto-select Customer Support Bot if no bot is selected
         if (botsWithHistory.length > 0) {
           setSelectedBot(CUSTOMER_SUPPORT_BOT_ID);
           await loadChatHistory(CUSTOMER_SUPPORT_BOT_ID);
         }
         
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error loading bots:", error);
+        setError(error.message || "Failed to load bots");
       } finally {
         setLoading(false);
       }
@@ -225,7 +134,24 @@ export default function Chat() {
 
   const loadChatHistory = async (botDocId: string) => {
     try {
-      if (botDocId === CUSTOMER_SUPPORT_BOT_ID) {
+      const response = await fetch(`/api/chat/history/${botDocId}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Failed to load chat history:', errorData);
+        throw new Error(errorData.error || 'Failed to load chat history');
+      }
+      
+      const data = await response.json();
+
+      const chatHistory: ChatMessage[] = data.messages.map((msg: any) => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(msg.timestamp),
+      }));
+      
+      if (chatHistory.length === 0) {
         setMessages([
           {
             id: "welcome",
@@ -234,45 +160,10 @@ export default function Chat() {
             timestamp: new Date(),
           },
         ]);
-        return;
+      } else {
+        setMessages(chatHistory);
       }
-
-      if (!userId) {
-        setMessages([]);
-        return;
-      }
-
-      const chatsQuery = query(
-        collection(db, "botAgent", botDocId, "chats"),
-        orderBy("timestamp", "asc")
-      );
-      const chatsSnapshot = await getDocs(chatsQuery);
-      
-      const chatHistory: ChatMessage[] = [];
-      chatsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        
-        if (data.message) {
-          chatHistory.push({
-            id: `${doc.id}-user`,
-            role: "user",
-            content: data.message,
-            timestamp: data.timestamp?.toDate() || new Date(),
-          });
-        }
-
-        if (data.response) {
-          chatHistory.push({
-            id: `${doc.id}-bot`,
-            role: "bot",
-            content: data.response,
-            timestamp: data.timestamp?.toDate() || new Date(),
-          });
-        }
-      });
-      
-      setMessages(chatHistory);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading chat history:", error);
       setMessages([
         {
@@ -296,8 +187,11 @@ export default function Chat() {
         setBots([...bots, selectedBotInfo]);
       }
     }
+    
+    const selectedBotFromAll = allBots.find(b => b.id === botId);
+    const chatBotId = selectedBotFromAll?.botAgentId || botId;
 
-    await loadChatHistory(botId);
+    await loadChatHistory(chatBotId);
     setShowBotModal(false);
   };
 
@@ -307,18 +201,19 @@ export default function Chat() {
 
   const handleClearChat = async (botId: string) => {
     try {
-      if (botId !== CUSTOMER_SUPPORT_BOT_ID && userId) {
-        const { getDocs, deleteDoc, collection: firestoreCollection, query, where } = await import('firebase/firestore');
-        const chatsRef = firestoreCollection(db, "botAgent", botId, "chats");
-        const chatsQuery = query(chatsRef);
-        const chatsSnapshot = await getDocs(chatsQuery);
-        
-        // Delete all chat documents
-        const deletePromises = chatsSnapshot.docs.map(doc => deleteDoc(doc.ref));
-        await Promise.all(deletePromises);
+      if (botId === CUSTOMER_SUPPORT_BOT_ID) {
+        alert('Cannot clear Customer Support Bot history');
+        return;
+      }
+
+      const response = await fetch(`/api/chat/history/${botId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to clear chat history');
       }
       
-      // Remove bot from sidebar
       setBots(bots.filter(b => b.id !== botId));
       
       // If this was the selected bot, switch to Customer Support Bot
@@ -326,8 +221,9 @@ export default function Chat() {
         setSelectedBot(CUSTOMER_SUPPORT_BOT_ID);
         await loadChatHistory(CUSTOMER_SUPPORT_BOT_ID);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error clearing chat history:", error);
+      alert(error.message || 'Failed to clear chat history');
     }
   };
 
@@ -337,36 +233,48 @@ export default function Chat() {
     const userMessage = input;
     setInput("");
 
-    if (selectedBot !== CUSTOMER_SUPPORT_BOT_ID) {
-      const { addDoc, collection: firestoreCollection, serverTimestamp } =
-        await import("firebase/firestore");
-
-      const chatRef = firestoreCollection(db, "botAgent", selectedBot, "chats");
-
-      const docRef = await addDoc(chatRef, {
-        message: userMessage,
-        response: "Thanks for your message! How else can I assist you?",
-        timestamp: serverTimestamp(),
-        userID: parseInt(userId || "0"),
+    try {
+      const response = await fetch('/api/chat/message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          botId: selectedBot,
+          message: userMessage,
+        }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API Error:', errorData);
+        throw new Error(errorData.error || errorData.details || 'Failed to send message');
+      }
+
+      const data = await response.json();
 
       setMessages((prev) => [
         ...prev,
         {
-          id: `${docRef.id}-user`,
+          id: data.userMessage.id,
           role: "user",
-          content: userMessage,
-          timestamp: new Date(),
+          content: data.userMessage.content,
+          timestamp: new Date(data.userMessage.timestamp),
         },
         {
-          id: `${docRef.id}-bot`,
+          id: data.botResponse.id,
           role: "bot",
-          content: "Thanks for your message! How else can I assist you?",
-          timestamp: new Date(),
+          content: data.botResponse.content,
+          timestamp: new Date(data.botResponse.timestamp),
         },
       ]);
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      alert(error.message || 'Failed to send message. Please try again.');
+      setInput(userMessage); // Restore message on error
     }
   };
+
 
   // Handle reporting issue (creating ticket)
   const handleReportIssue = async () => {
