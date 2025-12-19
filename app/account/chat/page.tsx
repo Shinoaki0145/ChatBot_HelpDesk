@@ -206,14 +206,20 @@ export default function Chat() {
         return;
       }
 
-      const response = await fetch(`/api/chat/history/${botId}`, {
+      // Get the correct botAgentId for API call
+      const botInfo = bots.find(b => b.id === botId);
+      const apiBotId = botInfo?.botAgentId || botId;
+
+      const response = await fetch(`/api/chat/history/${apiBotId}`, {
         method: 'DELETE',
       });
       
       if (!response.ok) {
-        throw new Error('Failed to clear chat history');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to clear chat history');
       }
       
+      // Remove bot from sidebar
       setBots(bots.filter(b => b.id !== botId));
       
       // If this was the selected bot, switch to Customer Support Bot
