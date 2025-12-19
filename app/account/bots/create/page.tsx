@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   ArrowLeft,
   Upload,
@@ -11,6 +11,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { saveBot } from "@/lib/bot.firestore";
+import { toast } from "@/lib/hooks/use-toast";
+import { useAuth } from "../../AuthContext";
+import { readDriveFile } from "@/lib/drive-helpers";
 
 interface Group {
   id: string;
@@ -18,9 +22,9 @@ interface Group {
 }
 
 export default function BotCreate() {
-  const [model, setModel] = useState("gemini");
+  const [model, setModel] = useState("gemini-2.5-pro");
   const [botName, setBotName] = useState("");
-  const [knowledgeSource, setKnowledgeSource] = useState<"url" | "file" | null>(null);
+  const [knowledgeSource, setKnowledgeSource] = useState<"url" | "file" | "none">("none");
   const [knowledgeUrl, setKnowledgeUrl] = useState("");
   const [knowledgeText, setKnowledgeText] = useState(""); // NEW: extracted text
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
@@ -31,15 +35,43 @@ export default function BotCreate() {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [sending, setSending] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-  const packageType = typeof window !== "undefined" ? localStorage.getItem("packageType") || "individual" : "individual";
+  const {
+    userId,
+    packageType
+  } = useAuth();
   const router = useRouter();
 
-  // Mock groups
-  const [availableGroups] = useState<Group[]>([
-    { id: "1", name: "Sales Team" },
-    { id: "2", name: "Support Team" },
-    { id: "3", name: "Marketing Team" },
-  ]);
+  const [uploadedFile, setUploadedFile] = useState<{
+  provider: "drive";
+  url: string;
+  mimeType: string;
+  } | null>(null);
+
+  const [uploading, setUploading] = useState(false);
+
+  const [availableGroups, setAvailableGroups] = useState<Group[]>([]);
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const response = await fetch("/api/group");
+        if (!response.ok) throw new Error("Failed to fetch groups");
+        const data = await response.json();
+        setAvailableGroups(data.ownedGroups.map((g: any) => ({ 
+          id: g.groupID, name: g.groupName 
+        })));
+      } 
+      catch (error) {
+        console.error("Error loading groups:", error);
+        toast({
+          title: "Error",
+          description: "Could not load available groups.",
+          variant: "destructive"
+        });
+      }
+    };
+
+    fetchGroups();
+  }, []);
 
   // ----------------------------
   // (unchanged) extractor & callGenerateAPI_clean
@@ -138,7 +170,7 @@ export default function BotCreate() {
   async function callGenerateAPI_clean(prompt: string): Promise<{ output: string; raw: any }> {
     const payload = {
       prompt,
-      model: model === "gemini" ? "gemini-2.5-flash" : model,
+      model: model,
       maxOutputTokens: 500,
       temperature: 0.2,
     };
@@ -185,38 +217,46 @@ export default function BotCreate() {
   // ----------------------------
   const handleCreateBot = async () => {
     if (!botName.trim()) {
-      alert("Please enter bot name");
+      toast({
+        title: "Error",
+        description: "Bot name required"
+      });
       return;
     }
 
-    let finalKnowledgeText = knowledgeText;
+    if (knowledgeSource === "none") {
+      toast({
+        title: "Error",
+        description: "Knowledge source required"
+      });
+      return;
+    }
 
-    try {
-      if (knowledgeSource === "url" && knowledgeUrl) {
-        finalKnowledgeText = await readWebsite(knowledgeUrl);
-        setKnowledgeText(finalKnowledgeText);
+    if (knowledgeSource === "url") {
+      if (!knowledgeUrl.trim()) {
+        toast({ title: "Error", description: "Website URL required" });
+        return;
       }
-    } catch (err: any) {
-      alert("Failed to read website: " + err.message);
-      return;
+
+      setSending(true); // Reuse sending state for extraction feedback
+      try {
+        const text = await readWebsite(knowledgeUrl);
+        setKnowledgeText(text); // Carries data to the test page
+        toast({ title: "Website content processed" });
+        setBotCreated(true);
+      } catch (err: any) {
+        toast({
+          title: "Extraction Failed",
+          description: err.message || "Could not read website content",
+          variant: "destructive"
+        });
+      } finally {
+        setSending(false);
+      }
+    } 
+    else {
+      setBotCreated(true);
     }
-
-    const storedBotsRaw = localStorage.getItem("bots");
-    const bots = storedBotsRaw ? JSON.parse(storedBotsRaw) : [];
-
-    const newBot = {
-      id: String(bots.length + 1),
-      name: botName,
-      model,
-      knowledgeUrl,
-      knowledgeText: finalKnowledgeText,
-      createdAt: new Date().toISOString(),
-    };
-
-    bots.push(newBot);
-    localStorage.setItem("bots", JSON.stringify(bots));
-
-    setBotCreated(true);
   };
 
 
@@ -259,14 +299,11 @@ export default function BotCreate() {
       parts.push(`User question: ${userText}`);
 
       // Final instruction: prefer in-document answers, else respond accordingly
-      parts.push("Please answer the user's ques tion following the instructions above and using the provided document when relevant. If the document does not contain the answer, say you don't know.");
+      parts.push("Please answer the user's question following the instructions above and using the provided document when relevant. If the document does not contain the answer, say you don't know.");
 
       const combinedPrompt = parts.join("\n\n");
 
-      const { output, raw } = await callGenerateAPI_clean(combinedPrompt);
-
-      console.log("=== GEMINI RAW RESPONSE ===");
-      console.log(raw);
+      const { raw } = await callGenerateAPI_clean(combinedPrompt);
 
       // Extract best assistant text robustly
       const assistantText = extractTextFromApiResponse(raw) || "No response";
@@ -281,8 +318,38 @@ export default function BotCreate() {
     }
   };
 
-  const handleFinishCreation = () => {
-    router.push("/account/bots");
+  const handleFinishCreation = async () => {
+    try {
+      const res = await fetch("/api/bot/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adjustBotResponses: responseAdjustment.trim()
+          ? [{ question: "", answer: responseAdjustment.trim() }]
+          : [],
+          botName: botName.trim(),
+          owner: userId,
+          typeModel: model,
+          uploadFile: uploadedFile.url,
+          websiteLink: knowledgeSource === "url" ? knowledgeUrl.trim() : "",
+        })
+      });
+      if (res.ok) {
+        router.push("/account/bots");
+      }
+      else {
+        toast({
+          title: "Error",
+          description: "Failed to create bot",
+        });
+      }
+    } catch (error) {
+      console.log(error);
+      toast({
+        title: "Error",
+        description: "Failed to create bot",
+      });
+    }
   };
 
   const toggleGroupSelection = (groupId: string) => {
@@ -293,45 +360,46 @@ export default function BotCreate() {
   // UPLOAD helpers (client)
   // ----------------------------
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  async function uploadFileToServer(file: File): Promise<{ url: string; text: string }> {
-    const fd = new FormData();
-    fd.append("file", file);
-
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      body: fd,
-    });
-
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || `Upload failed (${res.status})`);
-
-    // json: { url: "/uploads/..", text: "extracted text" }
-    return json;
-  }
-
   function handleUploadClick() {
     fileInputRef.current?.click();
   }
+  
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
+    setUploading(true);
+
     try {
-      setSending(true);
-      const resp = await uploadFileToServer(f);
-      const absolute = window.location.origin + resp.url;
-      setKnowledgeUrl(absolute);
-      setKnowledgeText(resp.text || "");
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+      toast({
+        title: "File uploaded successfully",
+      })
+      const data = await res.json();
+      const text = await readDriveFile(data.fileId);
+      
+      setKnowledgeText(text);
       setKnowledgeSource("file");
-    } catch (err: any) {
-      console.error("Upload error", err);
-      alert("Upload failed: " + (err?.message ?? err));
+      setKnowledgeUrl(""); // clear URL
+      setUploadedFile({
+        provider: "drive",
+        url: data.link,
+        mimeType: data.mimeType,
+      });
+    } catch (err) {
+      alert("Failed to upload file");
     } finally {
-      setSending(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setUploading(false);
     }
-  }
+  };
 
   return (
     <div className="p-8">
@@ -356,16 +424,16 @@ export default function BotCreate() {
                 <h2 className="text-lg font-bold text-slate-900 mb-4">AI Model</h2>
                 <div className="space-y-3">
                   <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
-                    <input type="radio" name="model" value="gpt4" checked={model === "gpt4"} onChange={(e) => setModel(e.target.value)} />
-                    <div><div className="font-semibold text-slate-900">GPT-4</div><div className="text-xs text-slate-600">Most advanced</div></div>
+                    <input type="radio" name="model" value="gemini-2.5-pro" checked={model === "gemini-2.5-pro"} onChange={(e) => setModel(e.target.value)} />
+                    <div><div className="font-semibold text-slate-900">Gemini 2.5 Pro</div><div className="text-xs text-slate-600">Highest intelligence for complex tasks</div></div>
                   </label>
                   <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
-                    <input type="radio" name="model" value="claude3" checked={model === "claude3"} onChange={(e) => setModel(e.target.value)} />
-                    <div><div className="font-semibold text-slate-900">Claude 3</div><div className="text-xs text-slate-600">Balanced & fast</div></div>
+                    <input type="radio" name="model" value="gemini-2.5-flash" checked={model === "gemini-2.5-flash"} onChange={(e) => setModel(e.target.value)} />
+                    <div><div className="font-semibold text-slate-900">Gemini 2.5 Flash</div><div className="text-xs text-slate-600">Mid-size, fast, and balanced</div></div>
                   </label>
                   <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
-                    <input type="radio" name="model" value="gemini" checked={model === "gemini"} onChange={(e) => setModel(e.target.value)} />
-                    <div><div className="font-semibold text-slate-900">Gemini</div><div className="text-xs text-slate-600">Cost effective</div></div>
+                    <input type="radio" name="model" value="gemini-2.0-flash" checked={model === "gemini-2.0-flash"} onChange={(e) => setModel(e.target.value)} />
+                    <div><div className="font-semibold text-slate-900">Gemini 2.0 Flash</div><div className="text-xs text-slate-600">Fastest stable version</div></div>
                   </label>
                 </div>
                 {packageType === "business" && (
@@ -384,28 +452,34 @@ export default function BotCreate() {
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-slate-900 mb-2">Bot Name *</label>
-                    <input type="text" value={botName} onChange={(e) => setBotName(e.target.value)} placeholder="e.g., Customer Support Bot" className="w-full px-4 py-3 rounded-lg border border-slate-300" />
+                    <input type="text" disabled={uploading} value={botName} onChange={(e) => setBotName(e.target.value)} placeholder="e.g., Customer Support Bot" className="w-full px-4 py-3 rounded-lg border border-slate-300" />
                   </div>
 
                   <div>
                     <h3 className="text-sm font-medium text-slate-900 mb-4">Knowledge Base</h3>
                     <div className="space-y-3">
-                      <button onClick={() => setKnowledgeSource(knowledgeSource === "url" ? null : "url")} className={`w-full p-4 rounded-lg border-2 text-left ${knowledgeSource === "url" ? "border-blue-500 bg-blue-50" : "border-slate-300 hover:border-blue-300"}`}>
+                      <button disabled={uploading} onClick={() => setKnowledgeSource(knowledgeSource === "url" ? null : "url")} className={`w-full p-4 rounded-lg border-2 text-left ${knowledgeSource === "url" ? "border-blue-500 bg-blue-50" : "border-slate-300 hover:border-blue-300"}`}>
                         <div className="flex items-center gap-3 mb-2"><LinkIcon className="w-5 h-5 text-blue-600" /><span className="font-semibold">Add Website Link</span></div>
                         <p className="text-sm text-slate-600">Train bot with website content</p>
                       </button>
 
                       {knowledgeSource === "url" && (
-                        <input type="url" value={knowledgeUrl} onChange={(e) => setKnowledgeUrl(e.target.value)} placeholder="https://example.com" className="w-full px-4 py-3 rounded-lg border border-slate-300" />
+                        <input type="url" value={knowledgeUrl} onChange={(e) => { setKnowledgeUrl(e.target.value); setKnowledgeSource("url"); setUploadedFile(null); }} placeholder="https://example.com" className="w-full px-4 py-3 rounded-lg border border-slate-300" />
                       )}
 
-                      <button onClick={handleUploadClick} className={`w-full p-4 rounded-lg border-2 text-left ${knowledgeSource === "file" ? "border-blue-500 bg-blue-50" : "border-slate-300 hover:border-blue-300"}`}>
+                      <button disabled={uploading} onClick={handleUploadClick} className={`w-full p-4 rounded-lg border-2 text-left ${knowledgeSource === "file" ? "border-blue-500 bg-blue-50" : "border-slate-300 hover:border-blue-300"}`}>
                         <div className="flex items-center gap-3 mb-2"><Upload className="w-5 h-5 text-blue-600" /><span className="font-semibold">Upload File</span></div>
                         <p className="text-sm text-slate-600">PDF, TXT or DOCX files</p>
                       </button>
 
+                      {uploading && (
+                        <div className="text-xs text-blue-600 animate-pulse flex items-center gap-2 px-1">
+                          <span>Reading and parsing document content...</span>
+                        </div>
+                      )}
+
                       {knowledgeUrl && <div className="text-sm text-green-700">Uploaded: {knowledgeUrl}</div>}
-                      {knowledgeText && <div className="mt-2 p-3 bg-slate-50 rounded text-sm whitespace-pre-wrap max-h-40 overflow-auto">{knowledgeText.slice(0, 1000)}{knowledgeText.length > 1000 ? "…(truncated)" : ""}</div>}
+                      {knowledgeText && <div className="mt-2 p-3 bg-slate-50 rounded text-sm whitespace-pre-wrap max-h-40 overflow-auto">{knowledgeText}</div>}
                     </div>
                   </div>
 
@@ -441,7 +515,7 @@ export default function BotCreate() {
 
               <div className="bg-white rounded-lg border border-slate-200 p-6">
                 <h3 className="font-bold mb-4">Adjust Bot Response</h3>
-                <textarea value={responseAdjustment} onChange={(e) => setResponseAdjustment(e.target.value)} rows={4} className="w-full border rounded-lg p-3" />
+                <textarea value={responseAdjustment} onChange={(e) => setResponseAdjustment(e.target.value)} rows={4} placeholder="How should the bot respond?" className="w-full border rounded-lg p-3" />
               </div>
             </div>
 
@@ -451,7 +525,7 @@ export default function BotCreate() {
               <p><b>Model:</b> {model}</p>
               <p><b>Status:</b> Active</p>
               {knowledgeUrl && <p className="mt-3 text-xs text-slate-600">Knowledge: {knowledgeUrl}</p>}
-              <Button className="w-full mt-6 bg-blue-600 text-white" onClick={() => router.push("/account/bots")}>Save & Finish</Button>
+              <Button className="w-full mt-6 bg-blue-600 text-white" onClick={handleFinishCreation}>Save & Finish</Button>
               <Button className="w-full mt-3" variant="outline" onClick={() => setBotCreated(false)}>Back</Button>
             </div>
           </div>
