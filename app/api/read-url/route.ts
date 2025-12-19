@@ -30,16 +30,29 @@ export async function POST(req: Request) {
 
     // parse HTML → text
     const $ = cheerio.load(html);
-    $("script, style, nav, footer, header, noscript").remove();
+    $("script, style, nav, footer, header, noscript, iframe, aside, .ads, .sidebar, .menu, .cookie-banner, #footer, #header").remove();
 
-    const text = $("body")
-      .text()
-      .replace(/\s+/g, " ")
-      .trim();
+    let contentArea = $("main");
+
+    if (contentArea.length === 0) contentArea = $("article");
+    if (contentArea.length === 0) contentArea = $("[role='main']");
+    if (contentArea.length === 0) contentArea = $(".content, #content, .main");
+    if (contentArea.length === 0) contentArea = $("body");
+
+    const paragraphs: string[] = [];
+
+    contentArea.find("h1, h2, h3, p, li").each((_, el) => {
+      const text = $(el).text().trim();
+      if (text.length > 25) { 
+        paragraphs.push(text);
+      }
+    });
+
+    const cleanText = paragraphs.join("\n\n");
 
     return NextResponse.json({
       url,
-      text: text.slice(0, 100000), // giới hạn token cho LLM
+      text: cleanText.slice(0, 100000), // giới hạn token cho LLM
     });
   } catch (err: any) {
     return NextResponse.json(

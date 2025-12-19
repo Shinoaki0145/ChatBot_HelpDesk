@@ -1,6 +1,7 @@
-export type AdjustBotResponse = {
-  question: string; 
-  answer: string;  
+export type UploadedFile = {
+  provider: "drive";
+  url: string;
+  mimeType: string;
 };
 
 export type BotDocument = {
@@ -8,10 +9,13 @@ export type BotDocument = {
   typeModel: string;
   botName: string;
 
-  websiteLink?: string;
-  uploadFile?: string;
+  websiteLink?: string;        // dùng cho urlContext
+  uploadFile?: UploadedFile;  // Drive file
 
-  adjustBotResponses: AdjustBotResponse[];
+  adjustBotResponses: {
+    question: string; // luôn ""
+    answer: string;   // instruction
+  }[];
 
   createdAt: number;
 };
