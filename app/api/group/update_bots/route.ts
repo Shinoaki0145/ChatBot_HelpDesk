@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
-import { ReceiptTurkishLiraIcon } from 'lucide-react';
+
 /*
 PUT method to update shared bot
 - API PUT "api/group/update_bots"
@@ -58,7 +58,7 @@ export async function PUT(request: NextRequest) {
 
             if (snapshotBots.empty) {
                 return NextResponse.json({ 
-                    message: 'Bot not found!',
+                    message: 'Bot not found!'+`\nbotID: ${botID}`,
                     body
                 }, { status: 404 });
             }
@@ -88,8 +88,6 @@ export async function PUT(request: NextRequest) {
                 }
             })
         }
-
-        
 
         // stop shared bot with some groups
         const stopSharedGroupsQuery = query(groupsRef, where('sharedBotID', 'array-contains', botID));
