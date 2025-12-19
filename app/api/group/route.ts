@@ -8,7 +8,13 @@ import {
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
 
-// Get method to fetch groups for a user
+/*
+GET method to fetch groups for a user
+- API POST "api/group"
+- header:
+    - cookie: 
+        - session
+*/
 export async function GET( request: NextRequest ): Promise<NextResponse> {
 
     // Get session to authenticate and secure api 
