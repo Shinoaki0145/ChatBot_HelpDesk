@@ -113,11 +113,12 @@ export async function GET(req: NextRequest) {
     const customerSupportBot = {
       id: "customer-support",
       name: "Customer Support Bot",
-      model: "GPT-4",
+      model: "Gemini 2.5 Pro",
       hasHistory: true,
       active: true,
       botID: 0,
       isOwned: false,
+      createdAt: "2025-01-01T00:00:00.000Z",
     };
     allBots.push(customerSupportBot);
     ownedBots.push(customerSupportBot);
@@ -142,10 +143,10 @@ export async function GET(req: NextRequest) {
         id: botConfigDoc.id,
         botID: botID,
         name: botConfigData.botName || "Unnamed Bot",
-        model: botConfigData.typeModel || "GPT-4",
+        model: botConfigData.typeModel || "Gemini 2.5 Pro",
         hasHistory: false,
         active: isActive,
-        createdAt: botConfigData.createdAt || null,
+        createdAt: botConfigData.createdAt?.toDate?.()?.toISOString() || null,
         botAgentId: botAgentInfo?.docId || null,
         isOwned: isOwner,
       };

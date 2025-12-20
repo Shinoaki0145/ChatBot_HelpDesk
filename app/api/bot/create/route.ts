@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addDoc, collection, runTransaction, doc, setDoc } from "firebase/firestore";
+import { addDoc, collection, runTransaction, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/app";
 
 export async function POST(request: Request) {
@@ -29,7 +29,8 @@ export async function POST(request: Request) {
             owner: owner,
             typeModel: typeModel,
             uploadFile: uploadFile,
-            websiteLink: websiteLink
+            websiteLink: websiteLink,
+            createdAt: serverTimestamp()
         });
 
         // Create botAgent document with matching ID

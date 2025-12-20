@@ -25,7 +25,7 @@ export default function BotView() {
   const [chatMessages, setChatMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
-  const packageType = localStorage.getItem("packageType") || "individual";
+  const packageType = localStorage.getItem("packageType") || "business";
 
   const [availableGroups, setAvailableGroups] = useState<Group[]>([]);
   const [groupsLoading, setGroupsLoading] = useState<boolean>(true);
@@ -176,7 +176,6 @@ export default function BotView() {
           <div className="flex items-center gap-4 mb-8">
             <Link href="/account/bots">
               <button className="p-2 hover:bg-slate-100 rounded-lg">
-                title="Back to Bots"
                 <ArrowLeft className="w-5 h-5" />
               </button>
             </Link>
