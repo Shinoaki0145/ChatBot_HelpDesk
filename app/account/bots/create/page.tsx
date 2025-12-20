@@ -55,7 +55,7 @@ export default function BotCreate() {
       try {
         const response = await fetch("/api/group");
         if (!response.ok) throw new Error("Failed to fetch groups");
-        const data = await response.json();
+        const data = await response.json();``
         setAvailableGroups(data.ownedGroups.map((g: any) => ({ 
           id: g.groupID, name: g.groupName 
         })));
