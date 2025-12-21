@@ -14,8 +14,7 @@ import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { toast } from "@/lib/hooks/use-toast";
 import { readDriveFile, getFileIdFromUrl } from "@/lib/drive-helpers";
-import { get } from "http";
-import { Toast } from "@radix-ui/react-toast";
+import Markdown from 'marked-react';
 interface Group {
   id: string;
   name: string;
@@ -418,6 +417,15 @@ export default function BotView() {
       parts.push(`User question: ${userText}`);
 
       // Final instruction: prefer in-document answers, else respond accordingly
+      parts.push(`
+      FORMATTING RULES:
+      - Use strict GitHub Flavored Markdown (GFM).
+      - TABLES: Always include the separator row (e.g., |---|---|). Every row must start and end with a pipe (|).
+      - LISTS: Use a single space after the bullet (e.g., "- Item" not "-Item"). 
+      - HEADERS: Always put a space after the '#' (e.g., "## Section" not "##Section").
+      - CODE: Always use triple backticks with the language name for code blocks.
+      - SPACING: Always include a blank line before and after tables, lists, and code blocks.
+      `);
       parts.push(
         "Please answer the user's question following the instructions above and using the provided document when relevant. If the document does not contain the answer, say you don't know."
       );
@@ -831,7 +839,12 @@ export default function BotView() {
                             : "bg-slate-100 text-slate-900"
                         }`}
                       >
-                        {msg.content}
+                        {msg.role === "user" ? msg.content :
+                        (
+                          <div className="prose prose-sm max-w-none prose-slate">
+                            <Markdown value={msg.content} gfm={true}/>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))

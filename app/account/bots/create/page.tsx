@@ -15,6 +15,7 @@ import { saveBot } from "@/lib/bot.firestore";
 import { toast } from "@/lib/hooks/use-toast";
 import { useAuth } from "../../AuthContext";
 import { readDriveFile } from "@/lib/drive-helpers";
+import Markdown from 'marked-react';
 
 interface Group {
   id: string;
@@ -299,6 +300,16 @@ export default function BotCreate() {
       parts.push(`User question: ${userText}`);
 
       // Final instruction: prefer in-document answers, else respond accordingly
+      parts.push(`
+      FORMATTING RULES:
+      - Use strict GitHub Flavored Markdown (GFM).
+      - TABLES: Always include the separator row (e.g., |---|---|). Every row must start and end with a pipe (|).
+      - LISTS: Use a single space after the bullet (e.g., "- Item" not "-Item"). 
+      - HEADERS: Always put a space after the '#' (e.g., "## Section" not "##Section").
+      - CODE: Always use triple backticks with the language name for code blocks.
+      - SPACING: Always include a blank line before and after tables, lists, and code blocks.
+      - CRITICAL: For line breaks in tables, use a semicolon or a comma instead.
+      `);
       parts.push("Please answer the user's question following the instructions above and using the provided document when relevant. If the document does not contain the answer, say you don't know.");
 
       const combinedPrompt = parts.join("\n\n");
@@ -551,7 +562,14 @@ export default function BotCreate() {
                   ) : (
                     chatMessages.map((msg, i) => (
                       <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                        <div className={`max-w-xs px-4 py-2 rounded-lg ${msg.role === "user" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900"}`}>{msg.content}</div>
+                        <div className={`max-w-xs px-4 py-2 rounded-lg ${msg.role === "user" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900"}`}>
+                          {msg.role === "user" ? msg.content :
+                          (
+                            <div className="prose prose-sm max-w-none prose-slate">
+                              <Markdown value={msg.content} gfm={true}/>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}

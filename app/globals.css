@@ -123,4 +123,19 @@ Retrieved 2025-12-03, License - CC BY-SA 4.0
     overflow-x: auto;
     white-space: pre;
   }
+
+  .prose table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    border-collapse: collapse;
+    margin: 1rem 0;
+  }
+
+  .prose th, .prose td {
+    border: 1px solid hsl(var(--border));
+    padding: 12px;
+    min-width: 120px;
+  }
 }

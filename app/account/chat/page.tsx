@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/app/account/AuthContext";
 import { Alert } from "@/components/ui/alert";
 import { readDriveFile, getFileIdFromUrl } from "@/lib/drive-helpers";
+import Markdown from 'marked-react';
 
 interface ChatMessage {
   id: string;
@@ -570,7 +571,12 @@ export default function Chat() {
                           : "bg-slate-100 text-slate-900 rounded-bl-none"
                       }`}
                     >
-                      <p>{message.content}</p>
+                      {message.role === "user" ? message.content :
+                      (
+                        <div className="prose prose-sm max-w-none prose-slate">
+                          <Markdown value={message.content} gfm={true}/>
+                        </div>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 mt-1 px-2">
                       {formatTimestamp(message.timestamp)}
