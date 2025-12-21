@@ -16,7 +16,6 @@ PUT method to update member's emails
     - cookie: 
         - session
 - body: 
-    - groupName: string;
     - Member_Emails: string;
 */
 interface UpdateGroupRequest {
