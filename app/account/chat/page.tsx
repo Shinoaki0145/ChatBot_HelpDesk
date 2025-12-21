@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Send, Trash2, Plus, X, ShieldAlert, CircleAlert, Users } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/app/account/AuthContext";
 import { Alert } from "@/components/ui/alert";
 import { readDriveFile, getFileIdFromUrl } from "@/lib/drive-helpers";
@@ -88,6 +88,11 @@ export default function Chat() {
   // Knowledge base text for selected bot
   const [knowledgeText, setKnowledgeText] = useState<string>("");
   const [loadingKB, setLoadingKB] = useState(false);
+
+  // UI state: show typing/processing indicator while waiting for AI response
+  const [isThinking, setIsThinking] = useState(false);
+  // Ref to scroll to bottom when new messages appear
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const CUSTOMER_SUPPORT_BOT_ID = "customer-support";
   const CUSTOMER_SUPPORT_BOT: Bot = {
@@ -319,6 +324,16 @@ export default function Chat() {
     }
   };
 
+  // Auto-scroll to bottom when messages or thinking state changes
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      // slight delay to ensure DOM is updated
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
+    }
+  }, [messages, isThinking]);
+
   const handleClearChat = async (botId: string) => {
     try {
       if (botId === CUSTOMER_SUPPORT_BOT_ID) {
@@ -357,7 +372,21 @@ export default function Chat() {
     if (!input.trim() || !selectedBot) return;
 
     const userMessage = input;
+
+    // Optimistically show user's message immediately
+    const tempId = `temp-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        role: "user",
+        content: userMessage,
+        timestamp: new Date(),
+      },
+    ]);
+
     setInput("");
+    setIsThinking(true);
 
     try {
       const response = await fetch('/api/chat/message', {
@@ -380,25 +409,33 @@ export default function Chat() {
 
       const data = await response.json();
 
-      setMessages((prev) => [
-        ...prev,
-        {
+      // Replace the temporary user message id/timestamp with authoritative one from server
+      setMessages((prev) => prev.map((m) =>
+        m.id === tempId ? {
           id: data.userMessage.id,
-          role: "user",
+          role: data.userMessage.role,
           content: data.userMessage.content,
           timestamp: new Date(data.userMessage.timestamp),
-        },
+        } : m
+      ).concat([
         {
           id: data.botResponse.id,
           role: "bot",
           content: data.botResponse.content,
           timestamp: new Date(data.botResponse.timestamp),
-        },
-      ]);
+        }
+      ]));
+
+      setIsThinking(false);
     } catch (error: any) {
       console.error('Error sending message:', error);
-      alert(error.message || 'Failed to send message. Please try again.');
+      // Mark thinking as false and restore input so user can retry
+      setIsThinking(false);
       setInput(userMessage); // Restore message on error
+      alert(error.message || 'Failed to send message. Please try again.');
+
+      // Optionally mark the temporary message as failed (keeping it visible)
+      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: `failed-${tempId}` } : m));
     }
   };
 
@@ -556,35 +593,50 @@ export default function Chat() {
                 <p className="text-slate-500">No messages yet</p>
               </div>
             ) : (
-              messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div className="max-w-sm">
-                    <div
-                      className={`px-4 py-3 rounded-lg ${
-                        message.role === "user"
-                          ? "bg-blue-600 text-white rounded-br-none"
-                          : "bg-slate-100 text-slate-900 rounded-bl-none"
-                      }`}
-                    >
-                      {message.role === "user" ? message.content :
-                      (
-                        <div className="prose prose-sm max-w-none prose-slate">
-                          <Markdown value={message.content} gfm={true}/>
-                        </div>
-                      )}
+              <>
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${
+                      message.role === "user" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    <div className="max-w-sm">
+                      <div
+                        className={`px-4 py-3 rounded-lg ${
+                          message.role === "user"
+                            ? "bg-blue-600 text-white rounded-br-none"
+                            : "bg-slate-100 text-slate-900 rounded-bl-none"
+                        }`}
+                      >
+                        {message.role === "user" ? message.content :
+                        (
+                          <div className="prose prose-sm max-w-none prose-slate">
+                            <Markdown value={message.content} gfm={true}/>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 px-2">
+                        {formatTimestamp(message.timestamp)}
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1 px-2">
-                      {formatTimestamp(message.timestamp)}
-                    </p>
                   </div>
-                </div>
-              ))
+                ))}
+
+                {isThinking && (
+                  <div className="flex justify-start">
+                    <div className="max-w-sm">
+                      <div className="px-4 py-3 rounded-lg bg-slate-100 text-slate-900 rounded-bl-none flex items-center gap-2">
+                        <div className="h-3 w-3 rounded-full bg-slate-300 animate-pulse" />
+                        <div className="text-slate-500 text-sm">AI is thinking…</div>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 px-2">...</p>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
+            <div ref={messagesEndRef} /> 
           </div>
 
           {/* Input */}
@@ -601,16 +653,18 @@ export default function Chat() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                  placeholder="Type your message..."
-                  className="flex-1 px-4 py-3 rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  onKeyPress={(e) => e.key === "Enter" && !isThinking && handleSendMessage()}
+                  placeholder={isThinking ? "AI is thinking..." : "Type your message..."}
+                  disabled={isThinking}
+                  className={`flex-1 px-4 py-3 rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 ${isThinking ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
                 <Button onClick={handleReportIssue} className="bg-red-600 hover:bg-red-700">
                   <CircleAlert className="w-4 h-4" />
                 </Button>
                 <Button
                   onClick={handleSendMessage}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className={`bg-blue-600 hover:bg-blue-700 ${isThinking ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  disabled={isThinking}
                 >
                   <Send className="w-4 h-4" />
                 </Button>
