@@ -5,6 +5,7 @@ import { Send, Trash2, Plus, X, ShieldAlert, CircleAlert, Users } from "lucide-r
 import { useState, useEffect } from "react";
 import { useAuth } from "@/app/account/AuthContext";
 import { Alert } from "@/components/ui/alert";
+import { readDriveFile, getFileIdFromUrl } from "@/lib/drive-helpers";
 
 interface ChatMessage {
   id: string;
@@ -83,6 +84,10 @@ export default function Chat() {
   const [ticketName, setTicketName] = useState("");
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
 
+  // Knowledge base text for selected bot
+  const [knowledgeText, setKnowledgeText] = useState<string>("");
+  const [loadingKB, setLoadingKB] = useState(false);
+
   const CUSTOMER_SUPPORT_BOT_ID = "customer-support";
   const CUSTOMER_SUPPORT_BOT: Bot = {
     id: CUSTOMER_SUPPORT_BOT_ID,
@@ -91,6 +96,20 @@ export default function Chat() {
     hasHistory: true,
     active: true,
   };
+
+  // Function to read website content
+  async function readWebsite(url: string): Promise<string> {
+    const res = await fetch("/api/read-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error);
+
+    return json.text;
+  }
 
   useEffect(() => {
     if (authLoading) {
@@ -208,7 +227,8 @@ export default function Chat() {
     const chatBotId = selectedBotFromAll?.botAgentId || botId;
 
     await loadChatHistory(chatBotId);
-    await loadBotGroups(botId); // Load groups when selecting bot
+    await loadBotGroups(botId);
+    await loadBotKnowledge(botId); // Load knowledge base
     setShowBotModal(false);
   };
 
@@ -237,6 +257,64 @@ export default function Chat() {
       setBotGroups([]);
     } finally {
       setLoadingGroups(false);
+    }
+  };
+
+  // Function to load knowledge base for selected bot
+  const loadBotKnowledge = async (botId: string) => {
+    if (botId === CUSTOMER_SUPPORT_BOT_ID) {
+      setKnowledgeText("");
+      return;
+    }
+
+    try {
+      setLoadingKB(true);
+      const response = await fetch(`/api/bot/${botId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to load bot data');
+      }
+      
+      const data = await response.json();
+      let texts = "";
+
+      // Read files from Drive
+      if (data.uploadFile && data.uploadFile.trim().length > 0) {
+        const knowledgeFiles = data.uploadFile.split(",").map((url: string) => url.trim());
+        for (const url of knowledgeFiles) {
+          if (!url || url.length === 0) continue;
+          try {
+            const fileId = getFileIdFromUrl(url);
+            if (fileId) {
+              const text = await readDriveFile(fileId);
+              texts += text + "\n";
+            }
+          } catch (error) {
+            console.error("Error reading drive file:", error);
+          }
+        }
+      }
+
+      // Read website content
+      if (data.websiteLink && data.websiteLink.trim().length > 0) {
+        const knowledgeURLs = data.websiteLink.split(",").map((url: string) => url.trim());
+        for (const url of knowledgeURLs) {
+          if (!url || url.length === 0) continue;
+          try {
+            const text = await readWebsite(url);
+            texts += text + "\n";
+          } catch (error) {
+            console.error("Error reading website:", error);
+          }
+        }
+      }
+
+      setKnowledgeText(texts);
+    } catch (error: any) {
+      console.error("Error loading bot knowledge:", error);
+      setKnowledgeText("");
+    } finally {
+      setLoadingKB(false);
     }
   };
 
@@ -289,6 +367,7 @@ export default function Chat() {
         body: JSON.stringify({
           botId: selectedBot,
           message: userMessage,
+          knowledgeBase: knowledgeText, // Send knowledge base with message
         }),
       });
 

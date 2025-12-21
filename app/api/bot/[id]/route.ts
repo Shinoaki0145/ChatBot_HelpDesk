@@ -115,18 +115,34 @@ export async function GET(
   try {
     const { id } = await params;
     console.log("Fetching bot with ID:", id);
-    const q = query(collection(db, "botConfigAgent"), where("botID", "==", +id));
-    const querySnapshot = await getDocs(q);
-    if (querySnapshot.empty) {
-        return NextResponse.json({
-            message: "Bot not found"
-        }, { status: 404 });
+    
+    // Try to get by document ID first
+    const botRef = doc(db, "botConfigAgent", id);
+    const botDoc = await getDoc(botRef);
+    
+    if (botDoc.exists()) {
+      const data = botDoc.data();
+      console.log("Fetched bot data by doc ID:", data);
+      return NextResponse.json(data, { status: 200 });
     }
-
-    const docSnap = querySnapshot.docs[0];
-    const data = docSnap.data();
-    console.log("Fetched bot data:", data);
-    return NextResponse.json(data, { status: 200 });
+    
+    // If not found, try by numeric botID
+    const numericId = parseInt(id);
+    if (!isNaN(numericId)) {
+      const q = query(collection(db, "botConfigAgent"), where("botID", "==", numericId));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const docSnap = querySnapshot.docs[0];
+        const data = docSnap.data();
+        console.log("Fetched bot data by botID:", data);
+        return NextResponse.json(data, { status: 200 });
+      }
+    }
+    
+    return NextResponse.json({
+      message: "Bot not found"
+    }, { status: 404 });
   } catch (error: any) {
     console.error("Error fetching bot:", error);
     return NextResponse.json(

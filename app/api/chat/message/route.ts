@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const userIDNumber = userData.userID || userData.userId || 0;
 
     const body = await req.json();
-    const { botId, message } = body;
+    const { botId, message, knowledgeBase } = body;
 
     if (!botId || !message) {
       return NextResponse.json(
@@ -189,6 +189,12 @@ export async function POST(req: NextRequest) {
     const modelType = botConfig?.typeModel || "gemini-1.5-flash";
     const botContext = botData.context || botData.knowledge || "";
 
+    // Combine bot context with knowledge base from client
+    let combinedContext = botContext;
+    if (knowledgeBase && knowledgeBase.trim().length > 0) {
+      combinedContext = `${botContext}\n\n--- Knowledge Base ---\n${knowledgeBase.slice(0, 80000)}`;
+    }
+
     // Get recent chat history for context
     const chatsQuery = query(
       collection(db, "botAgent", botId, "chats"),
@@ -216,7 +222,7 @@ export async function POST(req: NextRequest) {
       botResponseText = await generateResponse({
         model: modelType,
         userMessage: message,
-        context: botContext,
+        context: combinedContext,
         chatHistory: chatHistory,
       });
     } catch (error) {
