@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@react-email/components": "1.0.2",
     "bcrypt-ts": "^8.0.0",
     "cheerio": "^1.1.2",
     "chromadb": "^3.1.8",
@@ -22,6 +23,7 @@
     "marked-react": "^3.0.2",
     "next": "^16.1.0",
     "node-fetch": "^3.3.2",
+    "nodemailer": "^7.0.11",
     "openai": "^6.15.0",
     "pdf-parse": "^2.4.5",
     "react": "^19.2.3",

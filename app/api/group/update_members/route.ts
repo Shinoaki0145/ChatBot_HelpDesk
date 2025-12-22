@@ -8,6 +8,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
+import { sendEmail } from '@/lib/email'
+import { render } from '@react-email/components';
+import { GroupInvitationEmail } from '@/components/ui/mail-template';
 
 /*
 PUT method to update member's emails
@@ -55,8 +58,26 @@ export async function PUT(request: NextRequest) {
 
         // update group
         const groupDoc = snapshot.docs[0];
+        const newMemberEmails = Member_Emails.split(',').map(email => email.trim());
+        const existingMemberEmails: string[] = groupDoc.data().sharedMembersEmail || [];
+
+        newMemberEmails.forEach(async email => {
+            if (!existingMemberEmails.includes(email)) {
+                const emailHtml = await render(GroupInvitationEmail({
+                    UserName: email.split('@')[0],
+                    GroupName: groupDoc.data().groupName
+                }));
+                sendEmail({
+                    to: email,
+                    subject: `Group ${groupDoc.data().groupName} Membership Updated`,
+                    text: `Hello,\n\nYou have been retained as a member of the group "${groupDoc.data().groupName}".\n\nBest regards,\nChatBot-HelpDesk Team`,
+                    html: emailHtml
+                });
+            }
+        });
+
         await updateDoc(groupDoc.ref, {
-            sharedMembersEmail: Member_Emails.split(',').map(email => email.trim()),
+            sharedMembersEmail: newMemberEmails,
         });
 
         return NextResponse.json({ 

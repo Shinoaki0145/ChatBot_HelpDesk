@@ -8,7 +8,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/app';
 import { GET as getSession } from '@/app/api/session/route'
-
+import { sendEmail } from '@/lib/email'
+import { render } from '@react-email/components';
+import { GroupInvitationEmail } from '@/components/ui/mail-template';
 /*
 POST method to create group and with other member
 - API POST "api/group/create"
@@ -62,13 +64,26 @@ export async function POST(request: NextRequest) {
             return newCurrent;
         });
 
-        // add new group to database (firebase)
+        const sharedMembersEmail = Member_Emails.split(',').map(email => email.trim());
+        sharedMembersEmail.forEach(async email => {
+            const emailHtml = await render(GroupInvitationEmail({
+                UserName: email.split('@')[0],
+                GroupName: groupName
+            }));
+            sendEmail({
+                to: email,
+                subject: `Group ${groupName} Membership Updated`,
+                text: `Hello,\n\nYou have been retained as a member of the group "${groupName}".\n\nBest regards,\nChatBot-HelpDesk Team`,
+                html: emailHtml
+            });
+        });
 
+        // add new group to database (firebase)
         await addDoc(collection(db, "groups"), {
             ownerID: ownerID,
             groupID: newId,
             groupName: groupName,
-            sharedMembersEmail: Member_Emails.split(',').map(email => email.trim()),
+            sharedMembersEmail: sharedMembersEmail,
             sharedBotID: [],
             create_at: Timestamp.now(),
         })
