@@ -196,8 +196,12 @@ export default function BotView() {
           for (const url of knowledgeFiles) {
             if (!url || url.length === 0) continue;
             let fileId = getFileIdFromUrl(url);
-            const text = await readDriveFile(fileId);
-            texts += text + "\n";
+            try {
+              const text = await readDriveFile(fileId);
+              texts += text + "\n";
+            } catch (error) {
+              console.log(error);
+            }
           }
         }
 
@@ -205,8 +209,12 @@ export default function BotView() {
           const knowledgeURLs = data.websiteLink.split(",").map((url: string) => url.trim());
           for (const url of knowledgeURLs) {
             if (!url || url.length === 0) continue;
-            const text = await readWebsite(url);
-            texts += text + "\n";
+            try {
+              const text = await readWebsite(url);
+              texts += text + "\n";
+            } catch (error) {
+              console.log(error);
+            }
           }
         }
         setKnowledgeText(texts);
