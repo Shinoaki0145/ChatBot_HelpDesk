@@ -343,7 +343,7 @@ export default function BotCreate() {
           botName: botName.trim(),
           owner: userId,
           typeModel: model,
-          uploadFile: uploadedFile.url,
+          uploadFile: knowledgeSource === "file" ? uploadedFile.url : "",
           websiteLink: knowledgeSource === "url" ? knowledgeUrl.trim() : "",
         })
       });
