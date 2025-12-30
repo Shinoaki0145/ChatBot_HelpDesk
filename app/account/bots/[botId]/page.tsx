@@ -213,6 +213,13 @@ export default function BotView() {
         setAdjustArray(
           Array.isArray(data.adjustBotResponses) ? data.adjustBotResponses : []
         );
+        if (Array.isArray(data.adjustBotResponses)) {
+          let initResponseAdjustment = "";
+          for (const response of data.adjustBotResponses) {
+            initResponseAdjustment += response.question + " " + response.answer + "\n";
+          }
+          setResponseAdjustment(initResponseAdjustment);
+        }
         // Load knowledge base text if available
       } catch (error: any) {
         console.error("Error loading bot data:", error);
