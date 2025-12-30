@@ -196,8 +196,12 @@ export default function BotView() {
           for (const url of knowledgeFiles) {
             if (!url || url.length === 0) continue;
             let fileId = getFileIdFromUrl(url);
-            const text = await readDriveFile(fileId);
-            texts += text + "\n";
+            try {
+              const text = await readDriveFile(fileId);
+              texts += text + "\n";
+            } catch (error) {
+              console.log(error);
+            }
           }
         }
 
@@ -205,14 +209,25 @@ export default function BotView() {
           const knowledgeURLs = data.websiteLink.split(",").map((url: string) => url.trim());
           for (const url of knowledgeURLs) {
             if (!url || url.length === 0) continue;
-            const text = await readWebsite(url);
-            texts += text + "\n";
+            try {
+              const text = await readWebsite(url);
+              texts += text + "\n";
+            } catch (error) {
+              console.log(error);
+            }
           }
         }
         setKnowledgeText(texts);
         setAdjustArray(
           Array.isArray(data.adjustBotResponses) ? data.adjustBotResponses : []
         );
+        if (Array.isArray(data.adjustBotResponses)) {
+          let initResponseAdjustment = "";
+          for (const response of data.adjustBotResponses) {
+            initResponseAdjustment += response.question + " " + response.answer + "\n";
+          }
+          setResponseAdjustment(initResponseAdjustment);
+        }
         // Load knowledge base text if available
       } catch (error: any) {
         console.error("Error loading bot data:", error);
