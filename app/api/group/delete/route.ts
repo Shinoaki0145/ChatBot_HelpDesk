@@ -47,7 +47,8 @@ export async function DELETE(request: NextRequest) {
         }
 
         // delete group
-        await deleteDoc(snapshot[0].ref);
+        console.log(`Deleting group with ID: ${groupID} by user: ${userId}`);
+        await deleteDoc(snapshot.docs[0].ref);
         
         return NextResponse.json({ 
             message: 'Update successful!',
