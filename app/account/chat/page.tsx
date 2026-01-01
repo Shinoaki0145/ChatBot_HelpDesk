@@ -89,6 +89,10 @@ export default function Chat() {
   const [knowledgeText, setKnowledgeText] = useState<string>("");
   const [loadingKB, setLoadingKB] = useState(false);
 
+  // Response adjustment for selected bot
+  const [responseAdjustment, setResponseAdjustment] = useState<string>("");
+  const [loadingAdjustment, setLoadingAdjustment] = useState<boolean>(false);
+
   // UI state: show typing/processing indicator while waiting for AI response
   const [isThinking, setIsThinking] = useState(false);
   // Ref to scroll to bottom when new messages appear
@@ -232,10 +236,18 @@ export default function Chat() {
     const selectedBotFromAll = allBots.find(b => b.id === botId);
     const chatBotId = selectedBotFromAll?.botAgentId || botId;
 
-    await loadChatHistory(chatBotId);
-    await loadBotGroups(botId);
-    await loadBotKnowledge(botId); // Load knowledge base
-    setShowBotModal(false);
+    try {
+      await Promise.allSettled([
+        loadChatHistory(chatBotId),
+        loadBotGroups(botId),
+        loadBotKnowledge(botId), // Load knowledge base
+        loadResponseAdjustment(botId) // Load response adjustment 
+      ]);
+    } catch (error) {
+      console.error("Error selecting bots:", error);
+    } finally {
+      setShowBotModal(false);
+    }
   };
 
   const handleNewChat = () => {
@@ -324,6 +336,37 @@ export default function Chat() {
     }
   };
 
+  // Function to load response adjustment for selected bot
+  const loadResponseAdjustment = async(botId: string) => {
+    if (botId === CUSTOMER_SUPPORT_BOT_ID) {
+      setKnowledgeText("");
+      return;
+    }
+
+    try {
+      setLoadingAdjustment(true);
+      const response = await fetch(`/api/bot/${botId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to load bot data');
+      }
+      
+      const data = await response.json();
+      const adjustments = data.adjustBotResponses || [];
+      let initResponseAdjustment = "";
+      for (const response of adjustments) {
+        initResponseAdjustment += response.question + " " + response.answer + "\n";
+      }
+
+      setResponseAdjustment(initResponseAdjustment);
+    } catch (error: any) {
+      console.error("Error loading bot adjustment: ", error);
+      setResponseAdjustment("");
+    } finally {
+      setLoadingAdjustment(false);
+    }
+  }
+
   // Auto-scroll to bottom when messages or thinking state changes
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -389,15 +432,20 @@ export default function Chat() {
     setIsThinking(true);
 
     try {
+      // Get the correct botAgentId for API call
+      const botInfo = bots.find(b => b.id === selectedBot);
+      const apiBotId = botInfo?.botAgentId || selectedBot;
+
       const response = await fetch('/api/chat/message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          botId: selectedBot,
+          botId: apiBotId,
           message: userMessage,
           knowledgeBase: knowledgeText, // Send knowledge base with message
+          adjustment: responseAdjustment,
         }),
       });
 
@@ -485,7 +533,12 @@ export default function Chat() {
     }
   };
 
-
+  const isBotLoading = loadingKB || loadingAdjustment;
+  const getLoadingMessage = () => {
+    if (loadingKB) return "Fetching knowledge base...";
+    if (loadingAdjustment) return "Applying bot settings...";
+    return "Bot is ready";
+  };
 
   return (
     <div className="p-8 h-[calc(100vh-80px)]">
@@ -558,7 +611,16 @@ export default function Chat() {
                     ? bots.find((b) => b.id === selectedBot)?.name || "Select a bot"
                     : "Select a bot"}
                 </h1>
-                <p className="text-sm text-slate-600">Chat with your bot</p>
+
+                {isBotLoading && (
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-full animate-pulse">
+                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
+                    <span className="text-[10px] font-medium text-slate-500 uppercase">
+                      Initializing...
+                    </span>
+                  </div>
+                )}
+                <p className="text-sm text-slate-600">{isBotLoading ? getLoadingMessage() : "Chat with your bot"}</p>
                 
                 {/* Show groups */}
                 {selectedBot && selectedBot !== CUSTOMER_SUPPORT_BOT_ID && (
@@ -648,27 +710,36 @@ export default function Chat() {
                 </p>
               </div>
             ) : (
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && !isThinking && handleSendMessage()}
-                  placeholder={isThinking ? "AI is thinking..." : "Type your message..."}
-                  disabled={isThinking}
-                  className={`flex-1 px-4 py-3 rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 ${isThinking ? 'opacity-70 cursor-not-allowed' : ''}`}
-                />
-                <Button onClick={handleReportIssue} className="bg-red-600 hover:bg-red-700">
-                  <CircleAlert className="w-4 h-4" />
-                </Button>
-                <Button
-                  onClick={handleSendMessage}
-                  className={`bg-blue-600 hover:bg-blue-700 ${isThinking ? 'opacity-70 cursor-not-allowed' : ''}`}
-                  disabled={isThinking}
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </div>
+              isBotLoading ? (
+                <div className="flex items-center justify-center py-3 bg-slate-50 border border-dashed border-slate-300 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm text-slate-500 font-medium">{getLoadingMessage()}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && !isThinking && handleSendMessage()}
+                    placeholder={isThinking ? "AI is thinking..." : "Type your message..."}
+                    disabled={isThinking}
+                    className={`flex-1 px-4 py-3 rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 ${isThinking ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  />
+                  <Button onClick={handleReportIssue} className="bg-red-600 hover:bg-red-700">
+                    <CircleAlert className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    onClick={handleSendMessage}
+                    className={`bg-blue-600 hover:bg-blue-700 ${isThinking ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    disabled={isThinking}
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+              )  
             )}
           </div>
         </div>
