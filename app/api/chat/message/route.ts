@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const userIDNumber = userData.userID || userData.userId || 0;
 
     const body = await req.json();
-    const { botId, message, knowledgeBase } = body;
+    const { botId, message, knowledgeBase, adjustment } = body;
 
     if (!botId || !message) {
       return NextResponse.json(
@@ -193,6 +193,10 @@ export async function POST(req: NextRequest) {
     let combinedContext = botContext;
     if (knowledgeBase && knowledgeBase.trim().length > 0) {
       combinedContext = `${botContext}\n\n--- Knowledge Base ---\n${knowledgeBase.slice(0, 80000)}`;
+    }
+
+    if (adjustment && adjustment.trim().length > 0) {
+      combinedContext = `${botContext}\n\n--- Instruction for answering: ---\n${adjustment}`;
     }
 
     combinedContext += `

@@ -89,6 +89,10 @@ export default function Chat() {
   const [knowledgeText, setKnowledgeText] = useState<string>("");
   const [loadingKB, setLoadingKB] = useState(false);
 
+  // Response adjustment for selected bot
+  const [responseAdjustment, setResponseAdjustment] = useState<string>("");
+  const [loadingAdjustment, setLoadingAdjustment] = useState<boolean>(false);
+
   // UI state: show typing/processing indicator while waiting for AI response
   const [isThinking, setIsThinking] = useState(false);
   // Ref to scroll to bottom when new messages appear
@@ -235,6 +239,7 @@ export default function Chat() {
     await loadChatHistory(chatBotId);
     await loadBotGroups(botId);
     await loadBotKnowledge(botId); // Load knowledge base
+    await loadResponseAdjustment(botId); // Load response adjustment 
     setShowBotModal(false);
   };
 
@@ -324,6 +329,37 @@ export default function Chat() {
     }
   };
 
+  // Function to load response adjustment for selected bot
+  const loadResponseAdjustment = async(botId: string) => {
+    if (botId === CUSTOMER_SUPPORT_BOT_ID) {
+      setKnowledgeText("");
+      return;
+    }
+
+    try {
+      setLoadingAdjustment(true);
+      const response = await fetch(`/api/bot/${botId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to load bot data');
+      }
+      
+      const data = await response.json();
+      const adjustments = data.adjustBotResponses || [];
+      let initResponseAdjustment = "";
+      for (const response of adjustments) {
+        initResponseAdjustment += response.question + " " + response.answer + "\n";
+      }
+
+      setResponseAdjustment(initResponseAdjustment);
+    } catch (error: any) {
+      console.error("Error loading bot adjustment: ", error);
+      setResponseAdjustment("");
+    } finally {
+      setLoadingAdjustment(false);
+    }
+  }
+
   // Auto-scroll to bottom when messages or thinking state changes
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -389,15 +425,20 @@ export default function Chat() {
     setIsThinking(true);
 
     try {
+      // Get the correct botAgentId for API call
+      const botInfo = bots.find(b => b.id === selectedBot);
+      const apiBotId = botInfo?.botAgentId || selectedBot;
+
       const response = await fetch('/api/chat/message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          botId: selectedBot,
+          botId: apiBotId,
           message: userMessage,
           knowledgeBase: knowledgeText, // Send knowledge base with message
+          adjustment: responseAdjustment,
         }),
       });
 
