@@ -76,7 +76,8 @@ export async function PUT(request: NextRequest) {
                 if (userID === snapshot.data().ownerID || 
                     snapshot.data().sharedMembersEmail.includes(email)
                 ){
-                    let sharedBotID: Number[] = snapshot.data().sharedBotID.empty ? [] : snapshot.data().sharedBotID ;
+                    // let sharedBotID: Number[] = snapshot.data().sharedBotID.empty ? [] : snapshot.data().sharedBotID ;
+                    let sharedBotID: Number[] = snapshot.data().sharedBotID || [] ;
 
                     if (sharedBotID.includes(botID) ) return;
 
