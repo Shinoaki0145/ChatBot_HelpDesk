@@ -1,0 +1,7 @@
+- Assigment:
+  - Nghiệp: preliminary problem statement 
+  - Trí Nhân: software features
+  - Đạt: software architecture + hardware
+  - Thiện Nhân: development plan
+  - Hùng: human resources & costing plan
+- Deadline: 21:00 2/11/2025

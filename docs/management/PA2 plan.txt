@@ -1,0 +1,8 @@
+Assigment: 
+ - Nghiệp: 2.Problem statement
+ - Hùng: 3.1 Stakeholders, 3.2.1 Functional Requirements
+ - Trí Nhân: 3.2.2 Non-functional requirements, 4.1 Use case modeling
+ - Thiện Nhân: 4.2 Use case specification
+ - Đạt: 5. Prototype
+
+Deadline: 00:00 25/11

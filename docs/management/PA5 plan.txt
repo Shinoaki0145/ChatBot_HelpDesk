@@ -1,0 +1,14 @@
+*Assignment:
+- Automated testing (maximum of 4 test cases/scenarios per use case):
+  + Trí Nhân: create bot, config bot
+  + Hùng: share bot, chat bot
+- Demo video: Đạt
+  + Focus on 3 main features: upload knowledge, chat with bot and share bot
+- Presentation:
+  + First 3 bullet points: Thiện Nhân
+  + Last 3 bullet points: Nghiệp
+
+Deadline: 
+- Automated testing: 23:00 Thursday 01/01/2026
+- Video: 23:00 Sunday 04/01/2026
+- Slide: 23:00 Friday 02/01/2026
