@@ -1,0 +1,7 @@
+- Assignment:
+  - Nghiệp: test use case config bot
+  - Đạt: test use case create bot
+  - Thiện Nhân: test use case chat
+  - Hùng: test use case group
+  - Trí Nhân: test use case login.
+- Deadline: 20:00 22/12/2025

@@ -1,0 +1,7 @@
+Assignment:
+  - Nghiệp: 2. Conceptual model
+  - Hùng: 3.1 Architectural diagram
+  - Trí Nhân: 3.2 Class diagram
+  - Thiện Nhân: 4. Data design
+  - Đạt: 5.UI/UX design
+Deadline: 23:00 07/12/2025
